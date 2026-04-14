@@ -52,11 +52,13 @@ From your worktree:
 
 ```bash
 npm install        # once per worktree
+PORT=$((5173 + RANDOM % 100)) npm run test:fx  # use a unique port — other agents may be running
 npm run check      # must pass
-npm run test:fx    # smoke test must pass for your effect
 ```
 
-Temporarily add your effect to `src/fx/registry.js` ONLY in your local worktree so the smoke test picks it up. The orchestrator will redo this properly on merge — don't commit that edit. If you do commit it, note it clearly in your report so the merge can be clean.
+Add your effect to `src/fx/registry.js` alongside the existing entries — don't remove others. The shell now swaps the `<canvas>` element between effect switches, so 2D and WebGL effects coexist fine. The orchestrator will review the registry edit on merge. Note it in your report either way.
+
+The smoke test no longer diffs screenshots — it only checks for console errors and non-blank output. That means **you cannot fake stability by freezing animation**; if your effect is supposed to animate, it must actually animate continuously. Visual review is done by a human with Playwright MCP or the browser.
 
 ## Report
 
