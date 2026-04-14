@@ -1,5 +1,6 @@
 import { effects, getEffect } from "./fx/registry.js";
 import { defaultParams } from "./fx/base.js";
+import { createColorPicker } from "./ui/color-picker.js";
 
 const panelLabel = /** @type {HTMLElement} */ (document.getElementById("effect-label"));
 const paramsHost = /** @type {HTMLElement} */ (document.getElementById("params"));
@@ -77,13 +78,21 @@ function renderParamsUi(fx) {
     name.className = "text-neutral-300";
     row.appendChild(name);
 
+    if (spec.type === "color") {
+      const colorRow = document.createElement("div");
+      colorRow.className = row.className;
+      colorRow.appendChild(name);
+      const picker = createColorPicker({
+        value: state.params[key],
+        onChange: (v) => { state.params[key] = v; writeHash(); },
+      });
+      colorRow.appendChild(picker.element);
+      paramsHost.appendChild(colorRow);
+      continue;
+    }
     /** @type {HTMLInputElement | HTMLSelectElement} */
     let input;
-    if (spec.type === "color") {
-      input = document.createElement("input");
-      /** @type {HTMLInputElement} */ (input).type = "color";
-      /** @type {HTMLInputElement} */ (input).value = state.params[key];
-    } else if (spec.type === "bool") {
+    if (spec.type === "bool") {
       input = document.createElement("input");
       /** @type {HTMLInputElement} */ (input).type = "checkbox";
       /** @type {HTMLInputElement} */ (input).checked = Boolean(state.params[key]);
