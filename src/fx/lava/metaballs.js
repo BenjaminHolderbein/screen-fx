@@ -78,9 +78,9 @@ export default {
   label: "Lava Lamp",
   category: "lava",
   params: {
-    count: { type: "number", default: 8, min: 5, max: MAX_BLOBS, step: 1, label: "Blob Count" },
-    size: { type: "number", default: 0.18, min: 0.05, max: 0.35, step: 0.01, label: "Size" },
-    speed: { type: "number", default: 0.6, min: 0.0, max: 2.0, step: 0.05, label: "Speed" },
+    count: { type: "number", default: 10, min: 5, max: MAX_BLOBS, step: 1, label: "Blob Count" },
+    size: { type: "number", default: 0.3, min: 0.05, max: 0.5, step: 0.01, label: "Size" },
+    speed: { type: "number", default: 0.2, min: 0.0, max: 2.0, step: 0.05, label: "Speed" },
     colorA: { type: "color", default: "#ffb347", label: "Color A" },
     colorB: { type: "color", default: "#ef3d2a", label: "Color B" },
     colorC: { type: "color", default: "#b31e7d", label: "Color C" },

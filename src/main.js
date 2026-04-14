@@ -19,6 +19,8 @@ const state = {
   effectId: effects[0].id,
   /** @type {Record<string, any>} */
   params: {},
+  /** @type {Record<string, Record<string, any>>} */
+  paramsByEffect: {},
   seed: 1,
   paused: false,
   /** @type {import("./fx/base.js").FxRenderer | null} */
@@ -35,7 +37,9 @@ function parseHash() {
   try {
     const parsed = JSON.parse(decodeURIComponent(h));
     if (parsed.effectId) state.effectId = parsed.effectId;
-    if (parsed.params) state.params = parsed.params;
+    if (parsed.params && parsed.effectId) {
+      state.paramsByEffect[parsed.effectId] = parsed.params;
+    }
     if (typeof parsed.seed === "number") state.seed = parsed.seed;
   } catch {
     /* ignore */
@@ -133,10 +137,13 @@ function renderPresetGrid() {
 function loadEffect(id) {
   const fx = getEffect(id);
   if (!fx) return;
+  if (state.params && state.effectId) {
+    state.paramsByEffect[state.effectId] = state.params;
+  }
   state.renderer?.dispose();
   replaceCanvas();
   state.effectId = id;
-  state.params = { ...defaultParams(fx.params), ...state.params };
+  state.params = { ...defaultParams(fx.params), ...(state.paramsByEffect[id] ?? {}) };
   panelLabel.textContent = fx.label;
   renderParamsUi(fx);
   const { w, h, dpr } = sizeCanvas();
