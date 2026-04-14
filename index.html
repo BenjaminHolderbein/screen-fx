@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>screen-fx</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      html, body, #app { height: 100%; margin: 0; }
+      body { background: #0a0a0a; color: #e5e5e5; font-family: ui-sans-serif, system-ui, sans-serif; }
+      .frost { background: rgba(20,20,20,0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
+      #preview-canvas { display: block; width: 100%; height: 100%; }
+      #preview-wrap.fs { position: fixed; inset: 0; z-index: 50; border-radius: 0; }
+      #preview-wrap.fs.cursor-hidden { cursor: none; }
+      .preset-tile { aspect-ratio: 16/10; }
+    </style>
+  </head>
+  <body>
+    <div id="app" class="grid grid-cols-[320px_1fr] gap-3 p-3">
+      <aside id="panel" class="frost rounded-xl p-4 overflow-y-auto">
+        <h1 class="text-sm font-semibold tracking-wide uppercase text-neutral-400 mb-3">screen-fx</h1>
+        <div id="effect-label" class="text-lg font-medium mb-2">—</div>
+        <div id="params" class="space-y-3"></div>
+        <div class="mt-6 pt-4 border-t border-white/10 space-y-2 text-xs text-neutral-400">
+          <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">F</kbd> fullscreen</div>
+          <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">Esc</kbd> exit</div>
+          <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">←/→</kbd> cycle presets</div>
+          <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">Space</kbd> pause</div>
+          <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">R</kbd> randomize</div>
+          <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">S</kbd> screenshot</div>
+        </div>
+      </aside>
+
+      <main class="grid grid-rows-[60%_1fr] gap-3 min-h-0">
+        <section id="preview-wrap" class="frost rounded-xl overflow-hidden relative">
+          <canvas id="preview-canvas"></canvas>
+        </section>
+        <section class="frost rounded-xl p-3 overflow-y-auto min-h-0">
+          <div class="text-xs uppercase tracking-wide text-neutral-400 mb-2">Presets</div>
+          <div id="preset-grid" class="grid grid-cols-4 gap-2"></div>
+        </section>
+      </main>
+    </div>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://esm.sh/three@0.169.0"
+        }
+      }
+    </script>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

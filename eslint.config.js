@@ -1,0 +1,36 @@
+export default [
+  {
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: {
+        window: "readonly",
+        document: "readonly",
+        console: "readonly",
+        requestAnimationFrame: "readonly",
+        cancelAnimationFrame: "readonly",
+        HTMLCanvasElement: "readonly",
+        HTMLElement: "readonly",
+        WebGL2RenderingContext: "readonly",
+        WebGLRenderingContext: "readonly",
+        CanvasRenderingContext2D: "readonly",
+        ResizeObserver: "readonly",
+        URL: "readonly",
+        history: "readonly",
+        Uint8Array: "readonly",
+        Set: "readonly",
+        Math: "readonly",
+        Number: "readonly",
+        Boolean: "readonly",
+        String: "readonly",
+        JSON: "readonly",
+        Object: "readonly",
+        Error: "readonly",
+      },
+    },
+    rules: {
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "no-undef": "error",
+    },
+  },
+];

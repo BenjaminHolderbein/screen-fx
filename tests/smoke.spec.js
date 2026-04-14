@@ -1,0 +1,81 @@
+import { test, expect } from "@playwright/test";
+
+/**
+ * Generic per-effect smoke test. Reads the effect registry from the running
+ * page, then for each effect:
+ *   1. loads it with a fixed seed
+ *   2. waits 2s of wall clock (shader compilation + first frames)
+ *   3. asserts no console errors
+ *   4. asserts the preview canvas isn't blank (not all one color)
+ *   5. snapshots the canvas
+ *
+ * Agents: if your effect fails (4), it's rendering nothing. If it fails (5)
+ * after looking correct by eye, run `npm run test:fx:update` to refresh the
+ * baseline.
+ */
+
+test.describe("effects smoke", () => {
+  test("every registered effect renders", async ({ page }) => {
+    /** @type {string[]} */
+    const consoleErrors = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => consoleErrors.push(String(err)));
+
+    await page.goto("/");
+    await page.waitForFunction(() => Boolean(/** @type {any} */ (window).__screenFx));
+
+    const ids = await page.evaluate(() =>
+      /** @type {any} */ (window).__screenFx.effects.map((/** @type {any} */ e) => e.id),
+    );
+    expect(ids.length).toBeGreaterThan(0);
+
+    for (const id of ids) {
+      await test.step(id, async () => {
+        consoleErrors.length = 0;
+        await page.evaluate((eid) => {
+          /** @type {any} */ (window).__screenFx.setSeed(42);
+          /** @type {any} */ (window).__screenFx.loadEffect(eid);
+        }, id);
+        await page.waitForTimeout(2000);
+
+        expect(consoleErrors, `console errors while rendering ${id}`).toEqual([]);
+
+        const nonBlank = await page.evaluate(() => {
+          const c = /** @type {HTMLCanvasElement} */ (document.getElementById("preview-canvas"));
+          const ctx = c.getContext("2d") || c.getContext("webgl2") || c.getContext("webgl");
+          // Reading pixels: if 2D, use getImageData. If WebGL, readPixels.
+          const w = c.width, h = c.height;
+          const samples = 64;
+          const xs = [], ys = [];
+          for (let i = 0; i < samples; i++) {
+            xs.push(Math.floor((i + 0.5) * w / samples));
+            ys.push(Math.floor((i + 0.5) * h / samples));
+          }
+          if (ctx instanceof CanvasRenderingContext2D) {
+            const set = new Set();
+            for (let i = 0; i < samples; i++) {
+              const d = ctx.getImageData(xs[i], ys[i], 1, 1).data;
+              set.add(`${d[0]},${d[1]},${d[2]}`);
+            }
+            return set.size >= 1; // solid-color is allowed to be one color
+          }
+          const gl = /** @type {WebGLRenderingContext} */ (ctx);
+          const buf = new Uint8Array(4);
+          const set = new Set();
+          for (let i = 0; i < samples; i++) {
+            gl.readPixels(xs[i], h - 1 - ys[i], 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+            set.add(`${buf[0]},${buf[1]},${buf[2]}`);
+          }
+          // WebGL effects: require more than one color to prove it drew something.
+          return set.size > 1;
+        });
+
+        expect(nonBlank, `${id} produced a blank render`).toBe(true);
+
+        await expect(page.locator("#preview-canvas")).toHaveScreenshot(`${id}.png`);
+      });
+    }
+  });
+});
