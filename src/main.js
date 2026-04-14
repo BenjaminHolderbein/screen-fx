@@ -5,7 +5,15 @@ const panelLabel = /** @type {HTMLElement} */ (document.getElementById("effect-l
 const paramsHost = /** @type {HTMLElement} */ (document.getElementById("params"));
 const presetGrid = /** @type {HTMLElement} */ (document.getElementById("preset-grid"));
 const previewWrap = /** @type {HTMLElement} */ (document.getElementById("preview-wrap"));
-const canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("preview-canvas"));
+/** @type {HTMLCanvasElement} */
+let canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("preview-canvas"));
+
+function replaceCanvas() {
+  const fresh = document.createElement("canvas");
+  fresh.id = "preview-canvas";
+  canvas.replaceWith(fresh);
+  canvas = fresh;
+}
 
 const state = {
   effectId: effects[0].id,
@@ -126,8 +134,8 @@ function loadEffect(id) {
   const fx = getEffect(id);
   if (!fx) return;
   state.renderer?.dispose();
+  replaceCanvas();
   state.effectId = id;
-  state.params = { ...defaultParams(fx.params), ...(state.params && state.effectId === id ? state.params : {}) };
   state.params = { ...defaultParams(fx.params), ...state.params };
   panelLabel.textContent = fx.label;
   renderParamsUi(fx);

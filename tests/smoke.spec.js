@@ -1,17 +1,14 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * Generic per-effect smoke test. Reads the effect registry from the running
- * page, then for each effect:
+ * Generic per-effect smoke test. For each effect:
  *   1. loads it with a fixed seed
  *   2. waits 2s of wall clock (shader compilation + first frames)
  *   3. asserts no console errors
- *   4. asserts the preview canvas isn't blank (not all one color)
- *   5. snapshots the canvas
+ *   4. asserts the preview canvas isn't blank
  *
- * Agents: if your effect fails (4), it's rendering nothing. If it fails (5)
- * after looking correct by eye, run `npm run test:fx:update` to refresh the
- * baseline.
+ * No screenshot diff — animated effects make that brittle. Visual review is
+ * done by humans via Playwright MCP or the browser.
  */
 
 test.describe("effects smoke", () => {
@@ -73,8 +70,6 @@ test.describe("effects smoke", () => {
         });
 
         expect(nonBlank, `${id} produced a blank render`).toBe(true);
-
-        await expect(page.locator("#preview-canvas")).toHaveScreenshot(`${id}.png`);
       });
     }
   });

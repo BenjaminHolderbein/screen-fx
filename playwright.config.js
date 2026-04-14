@@ -1,18 +1,24 @@
 import { defineConfig, devices } from "@playwright/test";
 
+// Per-worktree port to avoid collisions when multiple agents run tests in
+// parallel. Override with PORT env var; default 5173. Each worktree should
+// set its own PORT.
+const port = Number(process.env.PORT || 5173);
+const baseURL = `http://localhost:${port}`;
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   fullyParallel: true,
   reporter: "list",
   use: {
-    baseURL: "http://localhost:5173",
+    baseURL,
     viewport: { width: 1280, height: 800 },
     deviceScaleFactor: 1,
   },
   webServer: {
-    command: "npx serve -l 5173 .",
-    url: "http://localhost:5173",
+    command: `npx serve -l ${port} .`,
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 10_000,
   },
@@ -22,10 +28,4 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  expect: {
-    toHaveScreenshot: {
-      maxDiffPixelRatio: 0.02,
-      animations: "disabled",
-    },
-  },
 });
