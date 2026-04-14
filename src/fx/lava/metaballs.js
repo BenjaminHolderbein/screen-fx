@@ -14,8 +14,10 @@ uniform float uTime;
 uniform int uCount;
 uniform vec4 uBlobs[${MAX_BLOBS}];
 uniform vec4 uMotion[${MAX_BLOBS}];
+uniform vec4 uShape[${MAX_BLOBS}];
 uniform float uSize;
 uniform float uSpeed;
+uniform float uVariance;
 uniform vec3 uColA;
 uniform vec3 uColB;
 uniform vec3 uColC;
@@ -38,10 +40,15 @@ void main() {
     if (i >= uCount) break;
     vec4 b = uBlobs[i];
     vec4 m = uMotion[i];
+    vec4 s = uShape[i];
     float x = b.x + sin(TAU * t * m.x * 0.15 + m.y) * b.z * uSpeed;
     float y = b.y + sin(TAU * t * m.z * 0.12 + m.y * 1.7) * 0.35 * uSpeed;
     float r = b.w * uSize;
-    float di = length(p - vec2(x * aspect, y)) - r;
+    vec2 q = p - vec2(x * aspect, y);
+    float ang = atan(q.y, q.x);
+    float wob = sin(ang * s.x + s.y) * 0.6 + sin(ang * s.w - s.y * 1.3) * 0.4;
+    float rr = r * (1.0 + wob * s.z * uVariance);
+    float di = length(q) - rr;
     d = smin(d, di, 0.12);
   }
 
@@ -81,6 +88,7 @@ export default {
     count: { type: "number", default: 10, min: 5, max: MAX_BLOBS, step: 1, label: "Blob Count" },
     size: { type: "number", default: 0.3, min: 0.05, max: 0.5, step: 0.01, label: "Size" },
     speed: { type: "number", default: 0.2, min: 0.0, max: 2.0, step: 0.05, label: "Speed" },
+    shapeVariance: { type: "number", default: 0.5, min: 0.0, max: 1.0, step: 0.01, label: "Shape Variance" },
     colorA: { type: "color", default: "#ffb347", label: "Color A" },
     colorB: { type: "color", default: "#ef3d2a", label: "Color B" },
     colorC: { type: "color", default: "#b31e7d", label: "Color C" },
@@ -94,6 +102,7 @@ export default {
     const rng = makeRng(seed);
     const blobs = new Float32Array(MAX_BLOBS * 4);
     const motion = new Float32Array(MAX_BLOBS * 4);
+    const shape = new Float32Array(MAX_BLOBS * 4);
     for (let i = 0; i < MAX_BLOBS; i++) {
       blobs[i * 4 + 0] = rng();
       blobs[i * 4 + 1] = rng();
@@ -103,6 +112,10 @@ export default {
       motion[i * 4 + 1] = rng() * 6.28318;
       motion[i * 4 + 2] = 1 + Math.floor(rng() * 3);
       motion[i * 4 + 3] = 0.0;
+      shape[i * 4 + 0] = 2 + Math.floor(rng() * 3);
+      shape[i * 4 + 1] = rng() * 6.28318;
+      shape[i * 4 + 2] = 0.12 + rng() * 0.28;
+      shape[i * 4 + 3] = 1 + Math.floor(rng() * 3);
     }
 
     const vs = compile(gl, gl.VERTEX_SHADER, VERT);
@@ -130,8 +143,10 @@ export default {
       count: gl.getUniformLocation(prog, "uCount"),
       blobs: gl.getUniformLocation(prog, "uBlobs[0]"),
       motion: gl.getUniformLocation(prog, "uMotion[0]"),
+      shape: gl.getUniformLocation(prog, "uShape[0]"),
       size: gl.getUniformLocation(prog, "uSize"),
       speed: gl.getUniformLocation(prog, "uSpeed"),
+      variance: gl.getUniformLocation(prog, "uVariance"),
       colA: gl.getUniformLocation(prog, "uColA"),
       colB: gl.getUniformLocation(prog, "uColB"),
       colC: gl.getUniformLocation(prog, "uColC"),
@@ -150,8 +165,10 @@ export default {
         gl.uniform1i(u.count, Math.max(5, Math.min(MAX_BLOBS, Math.round(params.count))));
         gl.uniform4fv(u.blobs, blobs);
         gl.uniform4fv(u.motion, motion);
+        gl.uniform4fv(u.shape, shape);
         gl.uniform1f(u.size, params.size);
         gl.uniform1f(u.speed, params.speed);
+        gl.uniform1f(u.variance, Math.max(0, Math.min(1, params.shapeVariance ?? 0.5)));
         gl.uniform3fv(u.colA, hexToRgb(params.colorA));
         gl.uniform3fv(u.colB, hexToRgb(params.colorB));
         gl.uniform3fv(u.colC, hexToRgb(params.colorC));
