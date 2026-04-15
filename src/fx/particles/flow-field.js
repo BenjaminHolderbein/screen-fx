@@ -53,14 +53,18 @@ export default {
 
     const CAP = 20000;
     const positions = new Float32Array(CAP * 2);
+    const lives = new Float32Array(CAP);
+    const LIFE_MIN = 5, LIFE_MAX = 15; // seconds
     let currentCount = 0;
     let width = canvas.width, height = canvas.height;
 
+    function respawn(i) {
+      positions[i * 2] = rng() * width;
+      positions[i * 2 + 1] = rng() * height;
+      lives[i] = LIFE_MIN + rng() * (LIFE_MAX - LIFE_MIN);
+    }
     function seedParticles(n) {
-      for (let i = 0; i < n; i++) {
-        positions[i * 2] = rng() * width;
-        positions[i * 2 + 1] = rng() * height;
-      }
+      for (let i = 0; i < n; i++) respawn(i);
       currentCount = n;
     }
     seedParticles(Math.min(CAP, Math.max(1, Math.floor(params.count))));
@@ -82,15 +86,37 @@ export default {
         const ox = noiseOffsetX, oy = noiseOffsetY;
         const w = width, h = height;
 
+        // Curl-noise: velocity = perpendicular to gradient of scalar noise field.
+        // This yields a divergence-free 2D flow — no attractors, no pooling.
+        const eps = 1.0; // pixels, for finite-difference gradient
+        const sEps = eps * scale;
         for (let i = 0; i < currentCount; i++) {
           const ix = i * 2;
           let x = positions[ix];
           let y = positions[ix + 1];
-          const angle = valueNoise(x * scale + ox + tz, y * scale + oy, nSeed) * Math.PI * 4.0;
-          x += Math.cos(angle) * speed * step;
-          y += Math.sin(angle) * speed * step;
+          const nx = x * scale + ox + tz;
+          const ny = y * scale + oy;
+          const n1 = valueNoise(nx + sEps, ny, nSeed);
+          const n2 = valueNoise(nx - sEps, ny, nSeed);
+          const n3 = valueNoise(nx, ny + sEps, nSeed);
+          const n4 = valueNoise(nx, ny - sEps, nSeed);
+          const dNdx = (n1 - n2) / (2 * eps);
+          const dNdy = (n3 - n4) / (2 * eps);
+          // curl of scalar field F in 2D treated as potential: v = ( dF/dy, -dF/dx )
+          let vx = dNdy, vy = -dNdx;
+          const vm = Math.hypot(vx, vy) || 1;
+          vx /= vm; vy /= vm;
+          x += vx * speed * step;
+          y += vy * speed * step;
           if (x < 0) x += w; else if (x >= w) x -= w;
           if (y < 0) y += h; else if (y >= h) y -= h;
+
+          lives[i] -= step;
+          if (lives[i] <= 0) {
+            x = rng() * w;
+            y = rng() * h;
+            lives[i] = LIFE_MIN + rng() * (LIFE_MAX - LIFE_MIN);
+          }
           positions[ix] = x;
           positions[ix + 1] = y;
         }
