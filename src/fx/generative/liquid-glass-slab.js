@@ -1,16 +1,15 @@
 import { makeRng } from "../base.js";
 
 const MAX_COLORS = 6;
-const MAX_CARDS = 8;
 
 const VERT = `#version 300 es
 in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
 `;
 
-// Fragment shader: edge-rich backdrop + SDF slab + edge-concentrated refraction
-// + pow(edge,10) rim lip + per-channel chromatic offset + dual-scale specular
-// + rim highlight / inner shadow on opposing edges.
+// Fragment shader: churning oil-spill iridescence backdrop + SDF slab
+// + edge-concentrated refraction + pow(edge,10) rim lip + per-channel chromatic
+// offset + dual-scale specular + rim highlight / inner shadow on opposing edges.
 const FRAG = `#version 300 es
 precision highp float;
 out vec4 outColor;
@@ -19,11 +18,6 @@ uniform vec2 u_res;
 uniform float u_time;
 uniform int u_paletteCount;
 uniform vec3 u_palette[${MAX_COLORS}];
-uniform int u_cardCount;
-// per-card: x=yPos, y=halfWidth, z=halfHeight, w=speed
-uniform vec4 u_cardA[${MAX_CARDS}];
-// per-card: x=phase, y=fillIdx, z=borderIdx, w=stripeFlag (0/1)
-uniform vec4 u_cardB[${MAX_CARDS}];
 
 uniform vec2 u_slabCenter;    // in aspect-space (x scaled by aspect)
 uniform vec2 u_slabHalf;      // half-size in aspect-space
@@ -31,7 +25,8 @@ uniform float u_slabRadius;   // corner radius
 uniform float u_refraction;   // 0.005–0.04
 uniform float u_bevelDepth;   // 0.02–0.2
 uniform float u_bevelWidth;   // in aspect-space units; fraction of min(res)
-uniform float u_chroma;       // 0–0.08
+uniform float u_chroma;       // 0–0.15
+uniform float u_chromaPower;  // non-linear distribution of chroma across the bevel
 uniform vec2 u_lightDir;      // unit vector
 
 vec3 paletteAt(int i) {
@@ -50,86 +45,94 @@ float sdRoundBox(vec2 p, vec2 b, float r) {
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
-// Gaussian color center field: wide low-frequency "wallpaper" base.
-vec3 wallpaper(vec2 uv) {
-  float t = u_time * 0.03;
-  // four drifting centers
-  vec2 c0 = vec2(0.2 + 0.15 * sin(t * 0.7), 0.3 + 0.12 * cos(t * 0.9));
-  vec2 c1 = vec2(0.8 + 0.13 * cos(t * 0.6 + 1.7), 0.25 + 0.1 * sin(t * 0.8));
-  vec2 c2 = vec2(0.25 + 0.14 * sin(t * 0.5 + 2.1), 0.75 + 0.11 * cos(t * 0.4));
-  vec2 c3 = vec2(0.75 + 0.12 * cos(t * 0.8 + 0.7), 0.72 + 0.13 * sin(t * 0.6 + 3.1));
-
-  float s = 0.35; // gaussian sigma
-  float w0 = exp(-dot(uv - c0, uv - c0) / (s * s));
-  float w1 = exp(-dot(uv - c1, uv - c1) / (s * s));
-  float w2 = exp(-dot(uv - c2, uv - c2) / (s * s));
-  float w3 = exp(-dot(uv - c3, uv - c3) / (s * s));
-  float wsum = w0 + w1 + w2 + w3 + 1e-5;
-
-  vec3 col = (paletteAt(0) * w0 + paletteAt(1) * w1
-           + paletteAt(2) * w2 + paletteAt(3) * w3) / wsum;
-  // deepen slightly for contrast against cards
-  return col * 0.55;
+// Cyclic iridescent palette sample: wraps end to start so the rainbow closes.
+vec3 irid(float t) {
+  t = fract(t);
+  float scaled = t * float(u_paletteCount);
+  int i0 = int(floor(scaled)) % u_paletteCount;
+  int i1 = (i0 + 1) % u_paletteCount;
+  float f = fract(scaled);
+  return mix(paletteAt(i0), paletteAt(i1), f);
 }
 
-// One card's contribution. Returns premultiplied rgba contribution.
-// p is in UV space [0,1]^2 (y goes up).
-vec4 drawCard(int i, vec2 uv) {
-  vec4 A = u_cardA[0];
-  vec4 B = u_cardB[0];
-  // select card i via loop (uniform array dynamic indexing safety)
-  for (int k = 0; k < ${MAX_CARDS}; k++) {
-    if (k == i) { A = u_cardA[k]; B = u_cardB[k]; }
+// Hash-based value noise; deterministic, no textures.
+float hash21(vec2 p) {
+  p = fract(p * vec2(234.34, 435.345));
+  p += dot(p, p + 34.23);
+  return fract(p.x * p.y);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p) {
+  float s = 0.0;
+  float amp = 0.5;
+  mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+  for (int i = 0; i < 5; i++) {
+    s += amp * vnoise(p);
+    p = rot * p * 2.02;
+    amp *= 0.5;
   }
-  float yCenter = A.x;
-  float hw = A.y;
-  float hh = A.z;
-  float speed = A.w;
-  float phase = B.x;
-  int fillIdx = int(B.y + 0.5);
-  int borderIdx = int(B.z + 0.5);
-  float stripeFlag = B.w;
-
-  // Scroll horizontally; wrap with padding so cards cycle across the screen.
-  float span = 1.0 + 2.0 * hw;
-  float x = mod(phase + u_time * speed, span) - hw;
-
-  vec2 d = uv - vec2(x, yCenter);
-  vec2 q = abs(d) - vec2(hw, hh);
-  float inside = max(q.x, q.y);
-  if (inside > 0.004) return vec4(0.0);
-
-  vec3 fill = paletteAt(fillIdx);
-  vec3 border = paletteAt(borderIdx);
-
-  float alpha = smoothstep(0.002, -0.002, inside);
-  // thin border band
-  float borderBand = smoothstep(-0.006, -0.002, inside) * (1.0 - smoothstep(-0.002, 0.002, inside));
-  vec3 col = mix(fill * 0.9, border, borderBand);
-
-  // Optional horizontal stripes (high-frequency text-like detail)
-  if (stripeFlag > 0.5) {
-    // use local coords relative to card left edge
-    float ly = (uv.y - (yCenter - hh));
-    // several stripe rows
-    float stripe = step(0.35, fract(ly * 14.0));
-    // mask out edges of card to keep stripes inset
-    float pad = 0.012;
-    float innerMask = smoothstep(-pad - 0.002, -pad, inside);
-    col = mix(col, border * 0.8 + fill * 0.2, stripe * innerMask * 0.7);
-  }
-
-  return vec4(col, alpha);
+  return s;
 }
 
 vec3 backdrop(vec2 uv) {
-  vec3 col = wallpaper(uv);
-  // cards, painted in order (later cards on top).
-  for (int i = 0; i < ${MAX_CARDS}; i++) {
-    if (i >= u_cardCount) break;
-    vec4 c = drawCard(i, uv);
-    col = mix(col, c.rgb, c.a);
-  }
+  // Work in a stretched space for flowing streaks.
+  vec2 p = uv * vec2(3.2, 2.4);
+  float t = u_time;
+
+  vec2 q = vec2(
+    fbm(p + vec2(0.0, 0.0) + t * 0.08),
+    fbm(p + vec2(5.2, 1.3) - t * 0.11)
+  );
+  vec2 r = vec2(
+    fbm(p + 3.6 * q + vec2(1.7, 9.2) + t * 0.05),
+    fbm(p + 3.6 * q + vec2(8.3, 2.8) - t * 0.06)
+  );
+
+  float thickness = fbm(p + 4.5 * r + t * 0.03);
+  // Secondary band term shifts hue across space for rainbow bands.
+  float band = fbm(p * 0.6 + r * 2.0 - t * 0.02);
+  float hue = thickness * 1.8 + band * 0.9;
+
+  vec3 irc = irid(hue);
+
+  // Swirl intensity mask: concentrate brightness where warp magnitude is high.
+  float swirl = length(r - 0.5) * 2.0;
+  float bloom = pow(clamp(swirl, 0.0, 1.0), 1.4);
+
+  // Thin-film intensity: contrast-stretched thickness.
+  float intens = pow(clamp(thickness, 0.0, 1.0), 1.8);
+
+  // Edges between iridescence patches: gradient magnitude of hue via noise deriv.
+  float e = 0.008;
+  float gx = fbm(p + 4.5 * r + t * 0.03 + vec2(e, 0.0)) - thickness;
+  float gy = fbm(p + 4.5 * r + t * 0.03 + vec2(0.0, e)) - thickness;
+  float gmag = length(vec2(gx, gy)) / e;
+  float edgeHi = smoothstep(0.6, 1.6, gmag);
+
+  vec3 dark = vec3(0.015, 0.005, 0.03);
+  vec3 col = mix(dark, irc, intens * (0.35 + 0.75 * bloom));
+
+  // Bright iridescent peaks where swirl and thickness coincide.
+  col += irc * pow(intens, 3.0) * bloom * 0.9;
+
+  // Crisp edge highlights where swirl patches meet.
+  col += irid(hue + 0.15) * edgeHi * 0.6;
+
+  // Deep black pockets where thickness is low — this is the contrast anchor.
+  float dim = smoothstep(0.45, 0.15, thickness);
+  col *= 1.0 - dim * 0.85;
+
   return col;
 }
 
@@ -161,10 +164,12 @@ void main() {
   // push refracted UV INWARD from the edge: subtract offset (sample from inside).
   vec2 sampleOffsetUV = vec2(-offsetAspect.x / aspect, -offsetAspect.y);
 
-  // Chromatic dispersion: per-channel scaled offset.
-  vec2 offR = sampleOffsetUV * (1.0 + u_chroma);
+  // Chromatic dispersion: per-channel scaled offset, concentrated at the rim.
+  float chromaMask = pow(edge, u_chromaPower);
+  float chromaAmt = u_chroma * chromaMask;
+  vec2 offR = sampleOffsetUV * (1.0 + chromaAmt);
   vec2 offG = sampleOffsetUV;
-  vec2 offB = sampleOffsetUV * (1.0 - u_chroma);
+  vec2 offB = sampleOffsetUV * (1.0 - chromaAmt);
 
   vec3 bg = backdrop(fragUV);
 
@@ -199,8 +204,9 @@ void main() {
   vec3 V3 = vec3(0.0, 0.0, 1.0);
   vec3 H = normalize(L3 + V3);
 
-  float broad = pow(max(0.0, dot(N, L3)), 2.0) * 0.25;
-  float tight = pow(max(0.0, dot(N, H)), 20.0) * 1.0;
+  // Tighter broad term: exponent 5 (was 2) keeps the lit side bright but crisper.
+  float broad = pow(max(0.0, dot(N, L3)), 5.0) * 0.32;
+  float tight = pow(max(0.0, dot(N, H)), 28.0) * 1.0;
 
   // Rim band 4-8px around the edge.
   float band = smoothstep(-0.006, 0.0, sdfRaw) * (1.0 - smoothstep(0.0, 0.012, sdfRaw));
@@ -262,8 +268,9 @@ export default {
     slabSize: { type: "number", default: 0.4, min: 0.2, max: 0.6, step: 0.02, label: "Slab Size" },
     refraction: { type: "number", default: 0.015, min: 0.005, max: 0.04, step: 0.001, label: "Refraction" },
     bevelDepth: { type: "number", default: 0.08, min: 0.02, max: 0.2, step: 0.005, label: "Bevel Depth" },
-    chroma: { type: "number", default: 0.03, min: 0, max: 0.08, step: 0.005, label: "Chromatic Dispersion" },
-    cardCount: { type: "number", default: 5, min: 3, max: MAX_CARDS, step: 1, label: "Backdrop Cards" },
+    chroma: { type: "number", default: 0.06, min: 0, max: 0.15, step: 0.005, label: "Chromatic Dispersion" },
+    chromaPower: { type: "number", default: 1.5, min: 0.5, max: 4, step: 0.1, label: "Chroma Power" },
+    speed: { type: "number", default: 1.0, min: 0.1, max: 3, step: 0.05, label: "Speed" },
   },
   init(ctx, params, seed) {
     const { canvas } = ctx;
@@ -272,36 +279,20 @@ export default {
 
     const rng = makeRng(seed);
 
-    // Slab ambient-path params.
-    const slabPhaseX = rng() * Math.PI * 2;
-    const slabPhaseY = rng() * Math.PI * 2;
-    const slabFreqX = 0.07 + rng() * 0.05;
-    const slabFreqY = 0.05 + rng() * 0.05;
-
-    // Card data (yPos, hw, hh, speed, phase, fillIdx, borderIdx, stripeFlag).
-    const cardA = new Float32Array(MAX_CARDS * 4);
-    const cardB = new Float32Array(MAX_CARDS * 4);
-    for (let i = 0; i < MAX_CARDS; i++) {
-      const y = 0.1 + rng() * 0.8;
-      const hw = 0.08 + rng() * 0.18;
-      const hh = 0.05 + rng() * 0.12;
-      // Different speeds per row for parallax. Half go right, half left.
-      const dir = rng() < 0.5 ? 1 : -1;
-      const speed = dir * (0.01 + rng() * 0.04);
-      const phase = rng();
-      const fillIdx = Math.floor(rng() * MAX_COLORS);
-      const borderIdx = (fillIdx + 1 + Math.floor(rng() * (MAX_COLORS - 1))) % MAX_COLORS;
-      const stripeFlag = rng() < 0.35 ? 1 : 0;
-
-      cardA[i * 4 + 0] = y;
-      cardA[i * 4 + 1] = hw;
-      cardA[i * 4 + 2] = hh;
-      cardA[i * 4 + 3] = speed;
-      cardB[i * 4 + 0] = phase;
-      cardB[i * 4 + 1] = fillIdx;
-      cardB[i * 4 + 2] = borderIdx;
-      cardB[i * 4 + 3] = stripeFlag;
-    }
+    // DVD bounce state (in aspect-space; x ranges 0..aspect, y ranges 0..1).
+    // Initialized lazily on first frame when aspect is known; seeded from rng().
+    const bounce = {
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      inited: false,
+      seedUX: rng(),
+      seedUY: rng(),
+      seedVang: rng(),
+    };
+    // Base speed in aspect-space units per second (~10–20s diagonal traversal).
+    const BASE_SPEED = 0.12;
 
     const vs = compile(gl, gl.VERTEX_SHADER, VERT);
     const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
@@ -330,9 +321,6 @@ export default {
       time: gl.getUniformLocation(prog, "u_time"),
       paletteCount: gl.getUniformLocation(prog, "u_paletteCount"),
       palette: gl.getUniformLocation(prog, "u_palette"),
-      cardCount: gl.getUniformLocation(prog, "u_cardCount"),
-      cardA: gl.getUniformLocation(prog, "u_cardA"),
-      cardB: gl.getUniformLocation(prog, "u_cardB"),
       slabCenter: gl.getUniformLocation(prog, "u_slabCenter"),
       slabHalf: gl.getUniformLocation(prog, "u_slabHalf"),
       slabRadius: gl.getUniformLocation(prog, "u_slabRadius"),
@@ -340,6 +328,7 @@ export default {
       bevelDepth: gl.getUniformLocation(prog, "u_bevelDepth"),
       bevelWidth: gl.getUniformLocation(prog, "u_bevelWidth"),
       chroma: gl.getUniformLocation(prog, "u_chroma"),
+      chromaPower: gl.getUniformLocation(prog, "u_chromaPower"),
       lightDir: gl.getUniformLocation(prog, "u_lightDir"),
     };
 
@@ -350,7 +339,7 @@ export default {
     const paletteBuf = new Float32Array(MAX_COLORS * 3);
 
     return {
-      update(_dt, time) {
+      update(dt, time) {
         gl.viewport(0, 0, w, h);
         gl.useProgram(prog);
         gl.bindVertexArray(vao);
@@ -371,9 +360,54 @@ export default {
         const hh = slabSize * 0.5;
         const radius = Math.min(hw, hh) * 0.35;
 
-        // Ambient drift path.
-        const cx = aspect * 0.5 + Math.sin(time * slabFreqX + slabPhaseX) * (aspect * 0.18);
-        const cy = 0.5 + Math.cos(time * slabFreqY + slabPhaseY) * 0.15;
+        // DVD bounce bounds (slab edge must stay inside canvas).
+        const minX = hw;
+        const maxX = aspect - hw;
+        const minY = hh;
+        const maxY = 1.0 - hh;
+        const speedMul = Math.max(0.1, Math.min(3, params.speed ?? 1.0));
+
+        if (!bounce.inited) {
+          bounce.x = minX + bounce.seedUX * Math.max(0, maxX - minX);
+          bounce.y = minY + bounce.seedUY * Math.max(0, maxY - minY);
+          const ang = bounce.seedVang * Math.PI * 2;
+          bounce.vx = Math.cos(ang) * BASE_SPEED;
+          bounce.vy = Math.sin(ang) * BASE_SPEED;
+          bounce.inited = true;
+        }
+
+        const step = Math.min(dt, 0.05);
+        bounce.x += bounce.vx * speedMul * step;
+        bounce.y += bounce.vy * speedMul * step;
+
+        let hitX = false;
+        let hitY = false;
+        if (bounce.x < minX) { bounce.x = minX; bounce.vx = Math.abs(bounce.vx); hitX = true; }
+        else if (bounce.x > maxX) { bounce.x = maxX; bounce.vx = -Math.abs(bounce.vx); hitX = true; }
+        if (bounce.y < minY) { bounce.y = minY; bounce.vy = Math.abs(bounce.vy); hitY = true; }
+        else if (bounce.y > maxY) { bounce.y = maxY; bounce.vy = -Math.abs(bounce.vy); hitY = true; }
+
+        // Corner-nudge: ~12% of bounces, rotate velocity slightly toward the
+        // nearest corner. Makes true corner hits plausible without scripting.
+        if ((hitX || hitY) && rng() < 0.12) {
+          const nearCornerX = bounce.x < (minX + maxX) * 0.5 ? minX : maxX;
+          const nearCornerY = bounce.y < (minY + maxY) * 0.5 ? minY : maxY;
+          const tx = nearCornerX - bounce.x;
+          const ty = nearCornerY - bounce.y;
+          const tlen = Math.hypot(tx, ty) + 1e-6;
+          const dirX = tx / tlen;
+          const dirY = ty / tlen;
+          const blend = 0.18;
+          const nvx = bounce.vx * (1 - blend) + dirX * BASE_SPEED * blend;
+          const nvy = bounce.vy * (1 - blend) + dirY * BASE_SPEED * blend;
+          const cur = Math.hypot(bounce.vx, bounce.vy) || BASE_SPEED;
+          const nn = Math.hypot(nvx, nvy) || 1;
+          bounce.vx = (nvx / nn) * cur;
+          bounce.vy = (nvy / nn) * cur;
+        }
+
+        const cx = bounce.x;
+        const cy = bounce.y;
 
         // Light direction drifts slowly.
         const lAng = time * 0.08 + 0.6;
@@ -381,27 +415,22 @@ export default {
         const ly = Math.sin(lAng);
 
         // Bevel width: fraction of min viewport dim, in aspect-space units.
-        // Scale ~ 0.04 of min dim gave good visibility in testing.
+        // 0.045 (was 0.06) — narrower band reads crisper.
         const minDim = Math.min(aspect, 1.0);
-        const bevelWidth = 0.06 * minDim;
+        const bevelWidth = 0.045 * minDim;
 
         gl.uniform2f(u.res, w, h);
         gl.uniform1f(u.time, time);
         gl.uniform1i(u.paletteCount, pCount);
         gl.uniform3fv(u.palette, paletteBuf);
-        gl.uniform1i(
-          u.cardCount,
-          Math.max(3, Math.min(MAX_CARDS, Math.round(params.cardCount ?? 5))),
-        );
-        gl.uniform4fv(u.cardA, cardA);
-        gl.uniform4fv(u.cardB, cardB);
         gl.uniform2f(u.slabCenter, cx, cy);
         gl.uniform2f(u.slabHalf, hw, hh);
         gl.uniform1f(u.slabRadius, radius);
         gl.uniform1f(u.refraction, params.refraction ?? 0.015);
         gl.uniform1f(u.bevelDepth, params.bevelDepth ?? 0.08);
         gl.uniform1f(u.bevelWidth, bevelWidth);
-        gl.uniform1f(u.chroma, params.chroma ?? 0.03);
+        gl.uniform1f(u.chroma, params.chroma ?? 0.06);
+        gl.uniform1f(u.chromaPower, params.chromaPower ?? 1.5);
         gl.uniform2f(u.lightDir, lx, ly);
 
         gl.drawArrays(gl.TRIANGLES, 0, 3);
