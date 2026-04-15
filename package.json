@@ -5,10 +5,11 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "npx serve -l 5173 .",
+    "dev": "serve -l 5174 .",
     "check": "tsc --noEmit -p jsconfig.json && eslint src tests",
     "test:fx": "playwright test",
-    "test:fx:update": "playwright test --update-snapshots"
+    "test:fx:update": "playwright test --update-snapshots",
+    "postinstall": "xattr -cr node_modules 2>/dev/null || true"
   },
   "engines": {
     "node": ">=20"

@@ -68,6 +68,69 @@ function sizeCanvas() {
   return { w, h, dpr };
 }
 
+function renderColorArrayParam(key, spec) {
+  const min = spec.min ?? 2;
+  const max = spec.max ?? 8;
+  const wrap = document.createElement("div");
+  wrap.className = "space-y-1";
+  const header = document.createElement("div");
+  header.className = "flex items-center justify-between text-sm text-neutral-300";
+  const label = document.createElement("span");
+  label.textContent = spec.label ?? key;
+  header.appendChild(label);
+  const addBtn = document.createElement("button");
+  addBtn.textContent = "+";
+  addBtn.className = "w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-xs leading-none";
+  header.appendChild(addBtn);
+  wrap.appendChild(header);
+
+  const chips = document.createElement("div");
+  chips.className = "flex flex-wrap gap-1.5";
+  wrap.appendChild(chips);
+
+  const redraw = () => {
+    chips.innerHTML = "";
+    const arr = /** @type {string[]} */ (state.params[key]);
+    arr.forEach((c, i) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center gap-1";
+      const picker = createColorPicker({
+        value: c,
+        onChange: (v) => {
+          arr[i] = v;
+          writeHash();
+        },
+      });
+      row.appendChild(picker.element);
+      if (arr.length > min) {
+        const rm = document.createElement("button");
+        rm.textContent = "×";
+        rm.className = "w-5 h-5 rounded bg-white/5 hover:bg-red-500/40 text-xs leading-none text-neutral-400";
+        rm.addEventListener("click", () => {
+          arr.splice(i, 1);
+          writeHash();
+          redraw();
+        });
+        row.appendChild(rm);
+      }
+      chips.appendChild(row);
+    });
+    addBtn.disabled = arr.length >= max;
+    addBtn.className = addBtn.disabled
+      ? "w-6 h-6 rounded bg-white/5 text-xs leading-none text-neutral-600 cursor-not-allowed"
+      : "w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-xs leading-none";
+  };
+  addBtn.addEventListener("click", () => {
+    const arr = /** @type {string[]} */ (state.params[key]);
+    if (arr.length >= max) return;
+    arr.push(arr[arr.length - 1] ?? "#ffffff");
+    writeHash();
+    redraw();
+  });
+  redraw();
+  paramsHost.appendChild(wrap);
+}
+
 function renderParamsUi(fx) {
   paramsHost.innerHTML = "";
   for (const [key, spec] of Object.entries(fx.params)) {
@@ -88,6 +151,10 @@ function renderParamsUi(fx) {
       });
       colorRow.appendChild(picker.element);
       paramsHost.appendChild(colorRow);
+      continue;
+    }
+    if (spec.type === "colorArray") {
+      renderColorArrayParam(key, spec);
       continue;
     }
     /** @type {HTMLInputElement | HTMLSelectElement} */

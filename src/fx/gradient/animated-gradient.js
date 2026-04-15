@@ -1,6 +1,8 @@
 /* global Float32Array */
 import { makeRng } from "../base.js";
 
+const MAX_COLORS = 8;
+
 const VERT = `#version 300 es
 in vec2 a_pos;
 out vec2 v_uv;
@@ -17,8 +19,8 @@ out vec4 outColor;
 uniform float u_time;
 uniform vec2  u_res;
 uniform int   u_count;
-uniform vec3  u_colors[6];
-uniform vec2  u_seedOffsets[6];
+uniform vec3  u_colors[${MAX_COLORS}];
+uniform vec2  u_seedOffsets[${MAX_COLORS}];
 
 vec3 hash3(vec3 p) {
   p = vec3(
@@ -57,7 +59,7 @@ void main() {
 
   float totalW = 0.0;
   vec3 accum = vec3(0.0);
-  for (int i = 0; i < 6; i++) {
+  for (int i = 0; i < ${MAX_COLORS}; i++) {
     if (i >= u_count) break;
     vec2 off = u_seedOffsets[i];
     float n = snoise(vec3(p * 1.1 + off, u_time * 0.15 + float(i) * 1.7));
@@ -98,13 +100,13 @@ export default {
   label: "Animated Gradient",
   category: "gradient",
   params: {
-    count: { type: "number", default: 4, min: 3, max: 6, step: 1, label: "Color Count" },
-    color1: { type: "color", default: "#ff4d6d", label: "Color 1" },
-    color2: { type: "color", default: "#7c3aed", label: "Color 2" },
-    color3: { type: "color", default: "#1e90ff", label: "Color 3" },
-    color4: { type: "color", default: "#00d4a6", label: "Color 4" },
-    color5: { type: "color", default: "#ffb347", label: "Color 5" },
-    color6: { type: "color", default: "#ff80bf", label: "Color 6" },
+    palette: {
+      type: "colorArray",
+      default: ["#ff4d6d", "#7c3aed", "#1e90ff", "#00d4a6"],
+      min: 2,
+      max: MAX_COLORS,
+      label: "Palette",
+    },
     speed: { type: "number", default: 1.0, min: 0, max: 4, step: 0.05, label: "Speed" },
   },
   init(ctx, params, seed) {
@@ -113,8 +115,8 @@ export default {
     if (!gl) throw new Error("animated-gradient: webgl2 unavailable");
 
     const rng = makeRng(seed);
-    const offsets = new Float32Array(12);
-    for (let i = 0; i < 6; i++) {
+    const offsets = new Float32Array(MAX_COLORS * 2);
+    for (let i = 0; i < MAX_COLORS; i++) {
       offsets[i * 2] = (rng() - 0.5) * 200;
       offsets[i * 2 + 1] = (rng() - 0.5) * 200;
     }
@@ -154,16 +156,16 @@ export default {
 
     let w = canvas.width;
     let h = canvas.height;
-    const colorBuf = new Float32Array(18);
+    const colorBuf = new Float32Array(MAX_COLORS * 3);
 
     const draw = (time) => {
       gl.viewport(0, 0, w, h);
       gl.useProgram(prog);
 
-      const count = Math.max(3, Math.min(6, Math.round(params.count)));
-      for (let i = 0; i < 6; i++) {
-        const key = "color" + (i + 1);
-        const rgb = hexToRgb(params[key] || "#000000");
+      const palette = Array.isArray(params.palette) ? params.palette : [];
+      const count = Math.max(2, Math.min(MAX_COLORS, palette.length));
+      for (let i = 0; i < count; i++) {
+        const rgb = hexToRgb(palette[i] || "#000000");
         colorBuf[i * 3] = rgb[0];
         colorBuf[i * 3 + 1] = rgb[1];
         colorBuf[i * 3 + 2] = rgb[2];

@@ -3,10 +3,10 @@
  * default-export an object of this shape.
  *
  * @typedef {Object} ParamSpec
- * @property {"number"|"color"|"bool"|"enum"} type
+ * @property {"number"|"color"|"bool"|"enum"|"colorArray"} type
  * @property {any} default
- * @property {number} [min]
- * @property {number} [max]
+ * @property {number} [min]        // for number; for colorArray = min length
+ * @property {number} [max]        // for number; for colorArray = max length
  * @property {number} [step]
  * @property {string[]} [options]
  * @property {string} [label]
@@ -73,6 +73,8 @@ export function makeRng(seed) {
 export function defaultParams(schema) {
   /** @type {Record<string, any>} */
   const out = {};
-  for (const [k, spec] of Object.entries(schema)) out[k] = spec.default;
+  for (const [k, spec] of Object.entries(schema)) {
+    out[k] = Array.isArray(spec.default) ? spec.default.slice() : spec.default;
+  }
   return out;
 }
