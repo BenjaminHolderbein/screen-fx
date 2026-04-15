@@ -9,8 +9,9 @@ import plasma from "./retro/plasma.js";
 import keyLight from "./functional/key-light.js";
 import liquidGlassLenses from "./generative/liquid-glass-lenses.js";
 import liquidGlassRain from "./generative/liquid-glass-rain.js";
-import liquidGlassVeil from "./generative/liquid-glass-veil.js";
 import liquidGlassCrossing from "./generative/liquid-glass-crossing.js";
+import liquidGlassSlab from "./generative/liquid-glass-slab.js";
+import causticSea from "./generative/caustic-sea.js";
 import { assertFxModule } from "./base.js";
 
 /**
@@ -27,10 +28,11 @@ export const effects = [
   starfield,
   plasma,
   keyLight,
+  liquidGlassSlab,
   liquidGlassLenses,
   liquidGlassRain,
-  liquidGlassVeil,
   liquidGlassCrossing,
+  causticSea,
 ].map(assertFxModule);
 
 /** @param {string} id */

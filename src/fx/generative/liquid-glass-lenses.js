@@ -2,6 +2,7 @@ import { makeRng } from "../base.js";
 
 const MAX_TILES = 6;
 const MAX_COLORS = 6;
+const MAX_CARDS = 6;
 
 const VERT = `#version 300 es
 in vec2 a_pos;
@@ -18,9 +19,13 @@ uniform int u_tileCount;
 uniform int u_paletteCount;
 uniform vec3 u_palette[${MAX_COLORS}];
 uniform vec4 u_tileSeed[${MAX_TILES}];
+uniform vec4 u_cardSeed[${MAX_CARDS}];
 uniform float u_thickness;
 uniform float u_morph;
 uniform float u_highlight;
+uniform float u_chroma;
+
+const int CARD_COUNT = ${MAX_CARDS};
 
 vec3 paletteSample(float t) {
   float n = float(u_paletteCount);
@@ -48,24 +53,62 @@ float vnoise(vec2 p) {
   return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) * 0.5 + 0.5;
 }
 
+float sdRoundBoxF(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+}
+
+// Edge-rich backdrop: slow color blobs + hard-edged scrolling cards with borders.
 vec3 backdrop(vec2 uv) {
-  float t = u_time * 0.05;
-  float n1 = vnoise(uv * 1.6 + vec2(t, -t * 0.7));
-  float n2 = vnoise(uv * 2.8 - vec2(t * 0.6, t));
-  float n3 = vnoise(uv * 0.9 + vec2(-t * 0.3, t * 0.4));
-  vec3 a = paletteSample(n1 + t * 0.15);
-  vec3 b = paletteSample(n2 * 1.3 + 0.37 + t * 0.1);
-  vec3 c = paletteSample(n3 * 0.8 + 0.71);
-  vec3 col = mix(a, b, smoothstep(0.2, 0.8, n2));
-  col = mix(col, c, smoothstep(0.3, 0.9, n3 * n1));
-  float bands = 0.5 + 0.5 * sin(uv.x * 3.2 + uv.y * 2.1 + t * 2.0);
-  col *= 0.85 + 0.25 * bands;
-  return col;
+  float aspect = u_res.x / u_res.y;
+  // "wallpaper" base: soft gaussian-ish blobs
+  float t = u_time * 0.08;
+  float n1 = vnoise(uv * 1.2 + vec2(t, -t * 0.6));
+  float n2 = vnoise(uv * 2.0 - vec2(t * 0.5, t * 0.7));
+  vec3 base = paletteSample(n1 * 0.8 + t * 0.1);
+  base = mix(base, paletteSample(n2 * 1.1 + 0.31), smoothstep(0.25, 0.85, n2));
+  // Slight global vignette-ish tint to darken so cards pop
+  base *= 0.65;
+
+  // Cards: rounded rects scrolling horizontally at different Y lanes, parallax speeds.
+  for (int i = 0; i < CARD_COUNT; i++) {
+    vec4 cs = u_cardSeed[i];
+    // cs.x: lane Y (0..1), cs.y: speed, cs.z: width, cs.w: phase/height/striped flag
+    float laneY = 0.08 + cs.x * 0.84;
+    float speed = (0.06 + cs.y * 0.22) * ((i > 2) ? -1.0 : 1.0);
+    float cardW = 0.12 + cs.z * 0.22;
+    float cardH = 0.05 + fract(cs.w * 3.13) * 0.09;
+    float phase = cs.w * 6.2831853;
+    // Scroll x, wrapped
+    float worldX = fract(u_time * speed + cs.x * 2.31 + cs.y * 1.77) * (aspect + 2.0 * cardW) - cardW;
+    vec2 center = vec2(worldX, laneY);
+    vec2 q = vec2(uv.x * aspect, uv.y) - center;
+    float r = min(cardW, cardH) * 0.45;
+    float d = sdRoundBoxF(q, vec2(cardW, cardH), r);
+    // card fill color
+    vec3 fillCol = paletteSample(cs.x * 0.7 + cs.y * 0.3 + 0.12);
+    fillCol = mix(fillCol, vec3(0.95), 0.25 + 0.35 * fract(cs.z * 7.0));
+    // border
+    float borderMask = 1.0 - smoothstep(0.0, 0.003, abs(d + 0.004));
+    // body mask
+    float bodyMask = 1.0 - smoothstep(-0.003, 0.0, d);
+    // striped? ~1 in 3 cards
+    float striped = step(0.66, fract(cs.w * 5.17));
+    if (striped > 0.5) {
+      float stripes = step(0.5, fract((q.y + cs.z) * 42.0));
+      fillCol = mix(fillCol, fillCol * 0.35, stripes * 0.85);
+    }
+    // Darker border
+    vec3 borderCol = fillCol * 0.15;
+    base = mix(base, fillCol, bodyMask);
+    base = mix(base, borderCol, borderMask * bodyMask);
+  }
+
+  return base;
 }
 
 float sdRoundBox(vec2 p, vec2 b, float r) {
-  vec2 q = abs(p) - b + r;
-  return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+  return sdRoundBoxF(p, b, r);
 }
 
 float sdCapsule(vec2 p, vec2 b, float r) {
@@ -126,17 +169,20 @@ vec2 gradSDF(Tile tile, vec2 p) {
   return normalize(vec2(dx, dy) + 1e-6);
 }
 
+vec3 sampleBackdrop(vec2 uv) {
+  return backdrop(uv);
+}
+
 void main() {
   vec2 fragUV = gl_FragCoord.xy / u_res.xy;
   float aspect = u_res.x / u_res.y;
   vec2 p = vec2(fragUV.x * aspect, fragUV.y);
 
-  vec3 bg = backdrop(vec2(fragUV.x, fragUV.y) * 1.2);
+  vec3 bg = sampleBackdrop(fragUV);
 
   vec3 col = bg;
   float topZ = -1.0;
   int topTile = -1;
-  float topSDF = 0.0;
 
   for (int i = 0; i < ${MAX_TILES}; i++) {
     if (i >= u_tileCount) break;
@@ -145,7 +191,7 @@ void main() {
     float d = tileSDF(tile, p, local);
     if (d < 0.0) {
       float z = float(i);
-      if (z > topZ) { topZ = z; topTile = i; topSDF = d; }
+      if (z > topZ) { topZ = z; topTile = i; }
     }
   }
 
@@ -153,37 +199,61 @@ void main() {
     Tile tile = makeTile(topTile, aspect);
     vec2 local;
     float d = tileSDF(tile, p, local);
-    float rimProx = 1.0 - smoothstep(0.0, max(tile.hsize.x, tile.hsize.y), -d);
     vec2 g = gradSDF(tile, p);
 
-    float bendBase = 0.06 * u_thickness;
-    float bend = bendBase * (0.3 + 0.7 * rimProx);
-    vec2 pinch = -local * 0.08 * u_thickness * (1.0 - rimProx * 0.6);
-    vec2 refractUV = fragUV + (-g * bend + pinch) / vec2(aspect, 1.0);
+    // d is negative inside the slab; positive distance inside = -d
+    float insideDist = -d;
+    // Convert bevel width (normalized) to "aspect-space" distance: use min(res)/res.y ratio -> just treat as normalized
+    float bevelWidth = 0.035; // normalized band thickness
+    float edge = 1.0 - smoothstep(0.0, bevelWidth, insideDist);
 
-    float chroma = 0.012 * u_thickness * (0.2 + rimProx);
+    // Canonical liquidGL refraction: edge * refraction + edge^10 * bevelDepth (rim lip)
+    float refraction = 0.022 * u_thickness;
+    float bevelDepth = 0.11 * u_thickness;
+    float offsetAmt = edge * refraction + pow(edge, 10.0) * bevelDepth;
+    // Offset direction: outward from tile center for a convex lens feel
+    vec2 dirFromCenter = normalize(p - tile.center + 1e-6);
+    vec2 offset = dirFromCenter * offsetAmt;
+    // Express offset in uv space (fragUV is not aspect-corrected)
+    vec2 offsetUV = vec2(offset.x / aspect, offset.y);
+
+    // Per-channel chromatic dispersion of the SAME displacement vector
+    float chroma = u_chroma;
     vec3 refracted;
-    refracted.r = backdrop(vec2((refractUV.x - g.x * chroma) * 1.2, refractUV.y * 1.2)).r;
-    refracted.g = backdrop(vec2(refractUV.x * 1.2, refractUV.y * 1.2)).g;
-    refracted.b = backdrop(vec2((refractUV.x + g.x * chroma) * 1.2, (refractUV.y + g.y * chroma) * 1.2)).b;
+    refracted.r = sampleBackdrop(fragUV + offsetUV * (1.0 + chroma)).r;
+    refracted.g = sampleBackdrop(fragUV + offsetUV).g;
+    refracted.b = sampleBackdrop(fragUV + offsetUV * (1.0 - chroma)).b;
 
+    // Very mild tint (<5%)
     vec3 tint = paletteSample(tile.tintIdx);
-    refracted = mix(refracted, refracted * (0.7 + 0.6 * tint), 0.18);
-
-    vec2 lightDir = vec2(cos(tile.lightAng), sin(tile.lightAng));
-    float rimBand = smoothstep(-0.006, 0.0, d) * (1.0 - smoothstep(0.0, 0.012, d));
-    float rimLight = rimBand * max(dot(g, lightDir), 0.0);
-    float rimLightSoft = rimBand * pow(max(dot(g, lightDir), 0.0), 3.0);
-
-    float shadowBand = smoothstep(-0.04, -0.005, d) * (1.0 - smoothstep(-0.005, 0.0, d));
-    float shadowSide = max(-dot(g, lightDir), 0.0);
-    float innerShadow = shadowBand * shadowSide * u_thickness;
+    refracted = mix(refracted, refracted * (0.9 + 0.2 * tint), 0.04);
 
     col = refracted;
-    col += vec3(1.0) * rimLightSoft * (0.9 * u_highlight);
-    col += vec3(1.0) * rimLight * (0.35 * u_highlight);
-    col -= vec3(0.15, 0.12, 0.18) * innerShadow;
 
+    // Dual-scale specular: broad wash + tight glint with orbiting light
+    vec2 lightDir = vec2(cos(tile.lightAng), sin(tile.lightAng));
+    // Treat surface normal in 2D as gradSDF (outward); view is +Z. Half-vector approx:
+    vec3 N = normalize(vec3(-g, 0.5 + edge * 0.9)); // curve up near rim
+    vec3 L = normalize(vec3(lightDir, 0.6));
+    vec3 V = vec3(0.0, 0.0, 1.0);
+    vec3 H = normalize(L + V);
+    float broad = pow(max(0.0, dot(N, L)), 2.0) * 0.25;
+    float tight = pow(max(0.0, dot(N, H)), 20.0) * 1.0;
+    // Mask specular to inside the slab softly (so it doesn't bleed outside)
+    float inside = 1.0 - smoothstep(0.0, 0.002, d);
+    col += vec3(1.0) * (broad + tight) * u_highlight * inside;
+
+    // Rim highlight on light-facing side + inner shadow on opposite side,
+    // masked to a tight band (~4-8 px normalized ~ 0.004-0.01)
+    float rimBand = smoothstep(-0.008, -0.001, d) * (1.0 - smoothstep(-0.001, 0.001, d));
+    float lightFacing = max(dot(g, lightDir), 0.0);
+    float shadowFacing = max(-dot(g, lightDir), 0.0);
+    float rimHL = rimBand * lightFacing;
+    float innerShadow = rimBand * shadowFacing;
+    col += vec3(1.0) * rimHL * (0.7 * u_highlight);
+    col -= vec3(0.12, 0.10, 0.16) * innerShadow * 0.8;
+
+    // Outer drop shadow from tiles below (keeps tiles grounded)
     float outerShadow = 0.0;
     for (int j = 0; j < ${MAX_TILES}; j++) {
       if (j >= u_tileCount) break;
@@ -192,20 +262,21 @@ void main() {
       vec2 lj;
       float dj = tileSDF(tj, p, lj);
       if (dj > 0.0) {
-        outerShadow += exp(-dj * 28.0) * step(float(j), float(topTile));
+        outerShadow += exp(-dj * 32.0) * step(float(j), float(topTile));
       }
     }
-    col *= 1.0 - min(outerShadow * 0.35 * u_thickness, 0.5);
+    col *= 1.0 - min(outerShadow * 0.25, 0.4);
   } else {
+    // Outside all tiles: soft drop-shadow
     float outerShadow = 0.0;
     for (int i = 0; i < ${MAX_TILES}; i++) {
       if (i >= u_tileCount) break;
       Tile tile = makeTile(i, aspect);
       vec2 local;
       float d = tileSDF(tile, p, local);
-      if (d > 0.0) outerShadow += exp(-d * 30.0);
+      if (d > 0.0) outerShadow += exp(-d * 34.0);
     }
-    col *= 1.0 - min(outerShadow * 0.55 * u_thickness, 0.6);
+    col *= 1.0 - min(outerShadow * 0.35, 0.45);
   }
 
   col = pow(max(col, 0.0), vec3(0.95));
@@ -250,6 +321,7 @@ export default {
     drift: { type: "number", default: 0.5, min: 0, max: 2, step: 0.05, label: "Drift Speed" },
     morph: { type: "number", default: 0.4, min: 0, max: 1, step: 0.05, label: "Shape Morph" },
     highlightIntensity: { type: "number", default: 0.8, min: 0, max: 1.5, step: 0.05, label: "Highlight" },
+    chroma: { type: "number", default: 0.03, min: 0, max: 0.08, step: 0.005, label: "Chromatic Dispersion" },
   },
   init(ctx, params, seed) {
     const { canvas } = ctx;
@@ -263,6 +335,13 @@ export default {
       tileSeed[i * 4 + 1] = rng();
       tileSeed[i * 4 + 2] = rng();
       tileSeed[i * 4 + 3] = rng();
+    }
+    const cardSeed = new Float32Array(MAX_CARDS * 4);
+    for (let i = 0; i < MAX_CARDS; i++) {
+      cardSeed[i * 4 + 0] = rng();
+      cardSeed[i * 4 + 1] = rng();
+      cardSeed[i * 4 + 2] = rng();
+      cardSeed[i * 4 + 3] = rng();
     }
 
     const vs = compile(gl, gl.VERTEX_SHADER, VERT);
@@ -294,9 +373,11 @@ export default {
       paletteCount: gl.getUniformLocation(prog, "u_paletteCount"),
       palette: gl.getUniformLocation(prog, "u_palette"),
       tileSeed: gl.getUniformLocation(prog, "u_tileSeed"),
+      cardSeed: gl.getUniformLocation(prog, "u_cardSeed"),
       thickness: gl.getUniformLocation(prog, "u_thickness"),
       morph: gl.getUniformLocation(prog, "u_morph"),
       highlight: gl.getUniformLocation(prog, "u_highlight"),
+      chroma: gl.getUniformLocation(prog, "u_chroma"),
     };
 
     let w = canvas.width;
@@ -332,9 +413,11 @@ export default {
         gl.uniform1i(u.paletteCount, pCount);
         gl.uniform3fv(u.palette, paletteBuf);
         gl.uniform4fv(u.tileSeed, tileSeed);
+        gl.uniform4fv(u.cardSeed, cardSeed);
         gl.uniform1f(u.thickness, params.thickness ?? 0.6);
         gl.uniform1f(u.morph, params.morph ?? 0.4);
         gl.uniform1f(u.highlight, params.highlightIntensity ?? 0.8);
+        gl.uniform1f(u.chroma, params.chroma ?? 0.03);
 
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         gl.bindVertexArray(null);

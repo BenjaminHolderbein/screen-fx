@@ -170,8 +170,8 @@ function compile(gl, type, src) {
 
 /** @type {import("../base.js").FxModule} */
 export default {
-  id: "liquid-glass-veil",
-  label: "Liquid Glass · Veil",
+  id: "caustic-sea",
+  label: "Caustic Sea",
   category: "generative",
   params: {
     palette: {
