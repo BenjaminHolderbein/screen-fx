@@ -99,6 +99,21 @@ function generateThumb(fx) {
 /** @type {{ canvas: HTMLCanvasElement; renderer: import("../fx/base.js").FxRenderer; raf: number; tile: HTMLElement } | null} */
 let livePreview = null;
 
+let livePreviewEnabled = false;
+
+export function enableLivePreview() {
+  livePreviewEnabled = true;
+}
+
+export function disableLivePreview() {
+  livePreviewEnabled = false;
+  stopLivePreview();
+}
+
+export function isLivePreviewEnabled() {
+  return livePreviewEnabled;
+}
+
 /**
  * @param {HTMLElement} tile
  * @param {import("../fx/base.js").FxModule} fx
@@ -189,7 +204,10 @@ export async function renderPresetGrid(container, effects, { onSelect, onDoubleC
     tile.addEventListener("dblclick", () => onDoubleClick(fx.id));
 
     // Hover-to-animate
-    tile.addEventListener("mouseenter", () => startLivePreview(tile, fx));
+    tile.addEventListener("mouseenter", () => {
+      if (!livePreviewEnabled) return;
+      startLivePreview(tile, fx);
+    });
     tile.addEventListener("mouseleave", () => stopLivePreview());
 
     container.appendChild(tile);

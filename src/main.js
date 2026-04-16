@@ -2,7 +2,12 @@ import { effects, getEffect } from "./fx/registry.js";
 import { defaultParams } from "./fx/base.js";
 import { postFxOptions, getPostFx } from "./fx/postfx/registry.js";
 import { createColorPicker } from "./ui/color-picker.js";
-import { renderPresetGrid as renderPresetGridUI } from "./ui/preset-browser.js";
+import {
+  renderPresetGrid as renderPresetGridUI,
+  enableLivePreview,
+  disableLivePreview,
+  isLivePreviewEnabled,
+} from "./ui/preset-browser.js";
 import { createBacklight } from "./ui/backlight.js";
 
 const panelLabel = /** @type {HTMLElement} */ (document.getElementById("effect-label"));
@@ -261,7 +266,7 @@ function loadEffect(id) {
   const { w, h, dpr } = sizeCanvas();
   state.renderer = fx.init({ canvas: effectCanvas, width: w, height: h, dpr }, state.params, state.seed);
   writeHash();
-  backlight.capture(state.postFx ? postfxCanvas : effectCanvas);
+  backlight.update(state.params);
 }
 
 function loadPostFx(id) {
@@ -280,7 +285,7 @@ function loadPostFx(id) {
     effectCanvas.classList.remove("hidden");
     if (postfxSelect.value !== id) postfxSelect.value = id;
     writeHash();
-    backlight.capture(effectCanvas);
+    backlight.update(state.params);
     return;
   }
 
@@ -301,7 +306,7 @@ function loadPostFx(id) {
   postfxCanvas.classList.remove("hidden");
   if (postfxSelect.value !== id) postfxSelect.value = id;
   writeHash();
-  backlight.capture(postfxCanvas);
+  backlight.update(state.params);
 }
 
 function renderPostFxSelect() {
@@ -446,6 +451,11 @@ window.__screenFx = {
     enable: () => backlight.enable(),
     disable: () => backlight.disable(),
     isEnabled: () => backlight.isEnabled(),
+  },
+  presetPreview: {
+    enable: enableLivePreview,
+    disable: disableLivePreview,
+    isEnabled: isLivePreviewEnabled,
   },
   perfStats: {
     reset() {

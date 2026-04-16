@@ -1,29 +1,65 @@
-/* global getComputedStyle, clearTimeout, requestIdleCallback */
+/* global getComputedStyle */
 
 /**
- * Content backlight glow — samples the active canvas once per effect load
- * and casts a soft colored wash behind the preview area.
+ * Content backlight glow — derives a conic-gradient from the active effect's
+ * params (palette/color/background). No canvas sampling, so there's no
+ * GPU→CPU readback stall on effect load.
  *
- * Captures a single 8x8 snapshot, sets it as a CSS background-image on a
- * blurred div. No per-frame cost — the sample is taken once via a
- * one-second delayed capture after each effect swap.
+ * The glow div sits behind the preview with heavy blur + low opacity. CSS
+ * transitions the background so it crossfades smoothly between effects.
  */
+
+const FALLBACK_STOPS = ["#1a1a2e", "#16213e", "#0f3460"];
+const HEX = /^#[0-9a-f]{3,8}$/i;
+
+/** @param {Record<string, any>} params */
+export function paramsToStops(params) {
+  /** @type {string[]} */
+  const out = [];
+  const seen = new Set();
+  const push = (v) => {
+    if (typeof v !== "string") return;
+    const s = v.trim();
+    if (!HEX.test(s) || seen.has(s)) return;
+    seen.add(s);
+    out.push(s);
+  };
+
+  if (params && Array.isArray(params.palette)) {
+    for (const c of params.palette) push(c);
+  }
+  if (params) {
+    // prefer canonical trio for ordering, then sweep everything else
+    push(params.color);
+    push(params.accent);
+    push(params.background);
+    for (const v of Object.values(params)) {
+      if (Array.isArray(v)) v.forEach(push);
+      else push(v);
+    }
+  }
+
+  if (out.length < 2) return FALLBACK_STOPS.slice();
+  return out;
+}
+
+/** @param {string[]} stops */
+export function toConicGradient(stops) {
+  const n = stops.length;
+  const parts = stops.map((c, i) => {
+    const deg = Math.round((i / n) * 360);
+    return `${c} ${deg}deg`;
+  });
+  parts.push(`${stops[0]} 360deg`);
+  return `conic-gradient(from 0deg at 50% 50%, ${parts.join(", ")})`;
+}
 
 /**
  * @param {HTMLElement} mainEl  The <main> element that contains #preview-wrap.
  * @param {HTMLElement} _previewWrap  Reserved for future use.
- * @returns {{ capture(canvas: HTMLCanvasElement): void, dispose(): void, enable(): void, disable(): void, isEnabled(): boolean }}
+ * @returns {{ update(params: Record<string, any>): void, dispose(): void, enable(): void, disable(): void, isEnabled(): boolean }}
  */
 export function createBacklight(mainEl, _previewWrap) {
-  const SIZE = 8;
-
-  const sample = document.createElement("canvas");
-  sample.width = SIZE;
-  sample.height = SIZE;
-  const sCtx = /** @type {CanvasRenderingContext2D} */ (
-    sample.getContext("2d", { willReadFrequently: false })
-  );
-
   const glow = document.createElement("div");
   glow.setAttribute("aria-hidden", "true");
   Object.assign(glow.style, {
@@ -35,10 +71,8 @@ export function createBacklight(mainEl, _previewWrap) {
     filter: "blur(80px)",
     opacity: "0.4",
     pointerEvents: "none",
-    backgroundSize: "cover",
-    backgroundPosition: "center",
     borderRadius: "50%",
-    transition: "background-image 0.6s ease",
+    transition: "background 0.6s ease",
   });
 
   if (getComputedStyle(mainEl).position === "static") {
@@ -46,28 +80,13 @@ export function createBacklight(mainEl, _previewWrap) {
   }
   mainEl.insertBefore(glow, mainEl.firstChild);
 
-  /** @type {number} */
-  let timer = 0;
   let enabled = true;
 
-  /** @param {HTMLCanvasElement} source */
-  function capture(source) {
-    clearTimeout(timer);
+  /** @param {Record<string, any>} params */
+  function update(params) {
     if (!enabled) return;
-    // Delay 1s so the effect renders a representative frame, then use
-    // requestIdleCallback so the GPU sync never blocks a render frame.
-    timer = window.setTimeout(() => {
-      if (source.width === 0 || source.height === 0) return;
-      const doCapture = () => {
-        sCtx.drawImage(source, 0, 0, SIZE, SIZE);
-        glow.style.backgroundImage = `url(${sample.toDataURL()})`;
-      };
-      if (typeof requestIdleCallback === "function") {
-        requestIdleCallback(doCapture);
-      } else {
-        doCapture();
-      }
-    }, 1000);
+    const stops = paramsToStops(params || {});
+    glow.style.background = toConicGradient(stops);
   }
 
   function enable() {
@@ -77,8 +96,6 @@ export function createBacklight(mainEl, _previewWrap) {
 
   function disable() {
     enabled = false;
-    clearTimeout(timer);
-    glow.style.backgroundImage = "";
     glow.style.display = "none";
   }
 
@@ -87,9 +104,8 @@ export function createBacklight(mainEl, _previewWrap) {
   }
 
   function dispose() {
-    clearTimeout(timer);
     glow.remove();
   }
 
-  return { capture, dispose, enable, disable, isEnabled };
+  return { update, dispose, enable, disable, isEnabled };
 }
