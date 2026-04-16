@@ -258,7 +258,7 @@ function renderPresetGrid() {
 function loadEffect(id) {
   const fx = getEffect(id);
   if (!fx) return;
-  if (state.params && state.effectId) {
+  if (state.effectId && Object.keys(state.params).length > 0) {
     state.paramsByEffect[state.effectId] = state.params;
   }
   state.renderer?.dispose();
@@ -275,7 +275,7 @@ function loadEffect(id) {
 
 function loadPostFx(id) {
   // Persist current post-FX params before swapping.
-  if (state.postFxParams && state.postFxId && state.postFxId !== "none") {
+  if (state.postFxId && state.postFxId !== "none" && Object.keys(state.postFxParams).length > 0) {
     state.postFxParamsById[state.postFxId] = state.postFxParams;
   }
   state.postFx?.dispose();
