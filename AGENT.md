@@ -60,6 +60,22 @@ Add your effect to `src/fx/registry.js` alongside the existing entries — don't
 
 The smoke test no longer diffs screenshots — it only checks for console errors and non-blank output. That means **you cannot fake stability by freezing animation**; if your effect is supposed to animate, it must actually animate continuously. Visual review is done by a human with Playwright MCP or the browser.
 
+## Detecting frame hitches
+
+If your change touches the render loop, canvas sampling, or anything that might block the main thread, verify it doesn't introduce hitches:
+
+```js
+// Via Playwright's page.evaluate
+await page.evaluate(() => window.__screenFx.perfStats.reset());
+// ... trigger your scenario (load effect, switch post-FX, wait N seconds, etc.)
+const stats = await page.evaluate(() => window.__screenFx.perfStats.getStats());
+// { frameCount, avgFrameMs, maxFrameMs, hitchCount, hitchFrames }
+```
+
+Hitch threshold is **33ms** (below 30fps). A healthy scenario has `hitchCount === 0` and `maxFrameMs` under ~20ms. If `hitchCount > 0`, the `hitchFrames` array lists the durations so you can see how bad they were.
+
+Common hitch causes: `drawImage` / `toDataURL` / `getImageData` on a WebGL canvas (forces GPU→CPU sync), heavy synchronous work in the render loop, large shader compiles without warm-up.
+
 ## Report
 
 When you finish, return:

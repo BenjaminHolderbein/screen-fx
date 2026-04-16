@@ -316,6 +316,17 @@ function renderPostFxSelect() {
   postfxSelect.addEventListener("change", () => loadPostFx(postfxSelect.value));
 }
 
+const perf = {
+  frameCount: 0,
+  sumMs: 0,
+  maxFrameMs: 0,
+  hitchCount: 0,
+  /** @type {number[]} */
+  hitchFrames: [],
+};
+const HITCH_THRESHOLD_MS = 33;
+const HITCH_FRAMES_CAP = 100;
+
 function loop(tMs) {
   state.raf = requestAnimationFrame(loop);
   if (state.paused || document.hidden) {
@@ -325,6 +336,17 @@ function loop(tMs) {
   const dt = state.lastT ? (tMs - state.lastT) / 1000 : 0;
   state.lastT = tMs;
   state.time += dt;
+  if (dt > 0) {
+    const frameMs = dt * 1000;
+    perf.frameCount++;
+    perf.sumMs += frameMs;
+    if (frameMs > perf.maxFrameMs) perf.maxFrameMs = frameMs;
+    if (frameMs > HITCH_THRESHOLD_MS) {
+      perf.hitchCount++;
+      perf.hitchFrames.push(frameMs);
+      if (perf.hitchFrames.length > HITCH_FRAMES_CAP) perf.hitchFrames.shift();
+    }
+  }
   state.renderer?.update(dt, state.time);
   state.postFx?.apply(effectCanvas, dt, state.time);
 }
@@ -420,4 +442,27 @@ window.__screenFx = {
   setSeed(s) { state.seed = s; loadEffect(state.effectId); },
   setParam(k, v) { state.params[k] = v; writeHash(); },
   setPostFxParam(k, v) { state.postFxParams[k] = v; writeHash(); },
+  backlight: {
+    enable: () => backlight.enable(),
+    disable: () => backlight.disable(),
+    isEnabled: () => backlight.isEnabled(),
+  },
+  perfStats: {
+    reset() {
+      perf.frameCount = 0;
+      perf.sumMs = 0;
+      perf.maxFrameMs = 0;
+      perf.hitchCount = 0;
+      perf.hitchFrames.length = 0;
+    },
+    getStats() {
+      return {
+        frameCount: perf.frameCount,
+        avgFrameMs: perf.frameCount ? perf.sumMs / perf.frameCount : 0,
+        maxFrameMs: perf.maxFrameMs,
+        hitchCount: perf.hitchCount,
+        hitchFrames: perf.hitchFrames.slice(),
+      };
+    },
+  },
 };

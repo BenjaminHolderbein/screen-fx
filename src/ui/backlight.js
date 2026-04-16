@@ -12,7 +12,7 @@
 /**
  * @param {HTMLElement} mainEl  The <main> element that contains #preview-wrap.
  * @param {HTMLElement} _previewWrap  Reserved for future use.
- * @returns {{ capture(canvas: HTMLCanvasElement): void, dispose(): void }}
+ * @returns {{ capture(canvas: HTMLCanvasElement): void, dispose(): void, enable(): void, disable(): void, isEnabled(): boolean }}
  */
 export function createBacklight(mainEl, _previewWrap) {
   const SIZE = 8;
@@ -48,10 +48,12 @@ export function createBacklight(mainEl, _previewWrap) {
 
   /** @type {number} */
   let timer = 0;
+  let enabled = true;
 
   /** @param {HTMLCanvasElement} source */
   function capture(source) {
     clearTimeout(timer);
+    if (!enabled) return;
     // Delay 1s so the effect renders a representative frame, then use
     // requestIdleCallback so the GPU sync never blocks a render frame.
     timer = window.setTimeout(() => {
@@ -68,10 +70,26 @@ export function createBacklight(mainEl, _previewWrap) {
     }, 1000);
   }
 
+  function enable() {
+    enabled = true;
+    glow.style.display = "";
+  }
+
+  function disable() {
+    enabled = false;
+    clearTimeout(timer);
+    glow.style.backgroundImage = "";
+    glow.style.display = "none";
+  }
+
+  function isEnabled() {
+    return enabled;
+  }
+
   function dispose() {
     clearTimeout(timer);
     glow.remove();
   }
 
-  return { capture, dispose };
+  return { capture, dispose, enable, disable, isEnabled };
 }
