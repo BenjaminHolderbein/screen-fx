@@ -269,12 +269,12 @@ export default {
     },
     slabSize: { type: "number", default: 0.4, min: 0.2, max: 0.6, step: 0.02, label: "Slab Size" },
     refraction: { type: "number", default: 0.015, min: 0.005, max: 0.04, step: 0.001, label: "Refraction" },
-    bevelDepth: { type: "number", default: 0.08, min: 0.02, max: 0.2, step: 0.005, label: "Bevel Depth" },
+    bevelDepth: { type: "number", default: 0.1, min: 0.02, max: 0.2, step: 0.005, label: "Bevel Depth" },
     chroma: { type: "number", default: 0.06, min: 0, max: 0.15, step: 0.005, label: "Chromatic Dispersion" },
     chromaPower: { type: "number", default: 1.5, min: 0.5, max: 4, step: 0.1, label: "Chroma Power" },
-    speed: { type: "number", default: 1.0, min: 0.1, max: 3, step: 0.05, label: "Speed" },
-    bgScale: { type: "number", default: 1.0, min: 0.3, max: 3, step: 0.05, label: "Backdrop Scale" },
-    bgSpeed: { type: "number", default: 1.0, min: 0, max: 3, step: 0.05, label: "Backdrop Speed" },
+    speed: { type: "number", default: 0.5, min: 0.1, max: 3, step: 0.05, label: "Speed" },
+    bgScale: { type: "number", default: 0.1, min: 0.05, max: 3, step: 0.05, label: "Backdrop Scale" },
+    bgSpeed: { type: "number", default: 0.05, min: 0, max: 3, step: 0.05, label: "Backdrop Speed" },
   },
   init(ctx, params, seed) {
     const { canvas } = ctx;
@@ -437,8 +437,8 @@ export default {
         gl.uniform1f(u.bevelWidth, bevelWidth);
         gl.uniform1f(u.chroma, params.chroma ?? 0.06);
         gl.uniform1f(u.chromaPower, params.chromaPower ?? 1.5);
-        gl.uniform1f(u.bgScale, Math.max(0.3, Math.min(3, params.bgScale ?? 1.0)));
-        gl.uniform1f(u.bgSpeed, Math.max(0, Math.min(3, params.bgSpeed ?? 1.0)));
+        gl.uniform1f(u.bgScale, Math.max(0.05, Math.min(3, params.bgScale ?? 0.1)));
+        gl.uniform1f(u.bgSpeed, Math.max(0, Math.min(3, params.bgSpeed ?? 0.05)));
         gl.uniform2f(u.lightDir, lx, ly);
 
         gl.drawArrays(gl.TRIANGLES, 0, 3);
