@@ -39,7 +39,7 @@ export function paramsToStops(params) {
     }
   }
 
-  if (out.length < 2) return FALLBACK_STOPS.slice();
+  if (out.length === 0) return FALLBACK_STOPS.slice();
   return out;
 }
 
@@ -86,7 +86,7 @@ export function createBacklight(mainEl, _previewWrap) {
   function update(params) {
     if (!enabled) return;
     const stops = paramsToStops(params || {});
-    glow.style.background = toConicGradient(stops);
+    glow.style.background = stops.length === 1 ? stops[0] : toConicGradient(stops);
   }
 
   function enable() {

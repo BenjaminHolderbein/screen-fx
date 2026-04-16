@@ -141,6 +141,7 @@ function renderColorArrayParam(host, values, key, spec) {
         onChange: (v) => {
           arr[i] = v;
           writeHash();
+          backlight.update(state.params);
         },
         onApplyHarmony: (colors) => {
           // Replace palette colors, keeping the current palette length
@@ -149,6 +150,7 @@ function renderColorArrayParam(host, values, key, spec) {
           while (clamped.length < len) clamped.push(clamped[clamped.length - 1] ?? "#ffffff");
           values[key] = clamped;
           writeHash();
+          backlight.update(state.params);
           redraw();
         },
       });
@@ -160,6 +162,7 @@ function renderColorArrayParam(host, values, key, spec) {
         rm.addEventListener("click", () => {
           arr.splice(i, 1);
           writeHash();
+          backlight.update(state.params);
           redraw();
         });
         row.appendChild(rm);
@@ -176,6 +179,7 @@ function renderColorArrayParam(host, values, key, spec) {
     if (arr.length >= max) return;
     arr.push(arr[arr.length - 1] ?? "#ffffff");
     writeHash();
+    backlight.update(state.params);
     redraw();
   });
   redraw();
@@ -198,7 +202,7 @@ function renderParamsInto(host, schema, values) {
       colorRow.appendChild(name);
       const picker = createColorPicker({
         value: values[key],
-        onChange: (v) => { values[key] = v; writeHash(); },
+        onChange: (v) => { values[key] = v; writeHash(); backlight.update(state.params); },
       });
       colorRow.appendChild(picker.element);
       host.appendChild(colorRow);
