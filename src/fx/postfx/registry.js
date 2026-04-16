@@ -1,4 +1,7 @@
 import liquidGlassSlab from "./liquid-glass-slab.js";
+import filmGrain from "./film-grain.js";
+import vignette from "./vignette.js";
+import bloom from "./bloom.js";
 import { assertPostFxModule } from "./base.js";
 
 /**
@@ -8,7 +11,7 @@ import { assertPostFxModule } from "./base.js";
  */
 export const NONE = { id: "none", label: "None" };
 
-export const postFx = [liquidGlassSlab].map(assertPostFxModule);
+export const postFx = [liquidGlassSlab, filmGrain, vignette, bloom].map(assertPostFxModule);
 
 export const postFxOptions = [NONE, ...postFx];
 
