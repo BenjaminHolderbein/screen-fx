@@ -97,8 +97,18 @@ export default {
           const ppx = cx + xs[i] * kPrev;
           const ppy = cy + ys[i] * kPrev;
 
-          const sx = ppx + (ppx - px) * streakK * 8;
-          const sy = ppy + (ppy - py) * streakK * 8;
+          let dx = (ppx - px) * streakK * 8;
+          let dy = (ppy - py) * streakK * 8;
+          // Clamp streak length to avoid flashing lines when stars are very close
+          const streakLen = Math.hypot(dx, dy);
+          const maxStreak = Math.min(w, h) * 0.15;
+          if (streakLen > maxStreak) {
+            const sc = maxStreak / streakLen;
+            dx *= sc;
+            dy *= sc;
+          }
+          const sx = ppx + dx;
+          const sy = ppy + dy;
 
           const depth = 1 - (z - Z_NEAR) / (Z_FAR - Z_NEAR);
           const alpha = 0.25 + depth * 0.75;

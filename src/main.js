@@ -2,6 +2,7 @@ import { effects, getEffect } from "./fx/registry.js";
 import { defaultParams } from "./fx/base.js";
 import { postFxOptions, getPostFx } from "./fx/postfx/registry.js";
 import { createColorPicker } from "./ui/color-picker.js";
+import { renderPresetGrid as renderPresetGridUI } from "./ui/preset-browser.js";
 
 const panelLabel = /** @type {HTMLElement} */ (document.getElementById("effect-label"));
 const paramsHost = /** @type {HTMLElement} */ (document.getElementById("params"));
@@ -135,6 +136,15 @@ function renderColorArrayParam(host, values, key, spec) {
           arr[i] = v;
           writeHash();
         },
+        onApplyHarmony: (colors) => {
+          // Replace palette colors, keeping the current palette length
+          const len = /** @type {string[]} */ (values[key]).length;
+          const clamped = colors.slice(0, len);
+          while (clamped.length < len) clamped.push(clamped[clamped.length - 1] ?? "#ffffff");
+          values[key] = clamped;
+          writeHash();
+          redraw();
+        },
       });
       row.appendChild(picker.element);
       if (arr.length > min) {
@@ -229,20 +239,10 @@ function renderParamsInto(host, schema, values) {
 }
 
 function renderPresetGrid() {
-  presetGrid.innerHTML = "";
-  for (const fx of effects) {
-    const tile = document.createElement("button");
-    tile.className =
-      "preset-tile rounded-lg border border-white/10 bg-black/40 hover:border-white/30 text-xs text-left p-2 flex flex-col justify-end";
-    tile.textContent = fx.label;
-    tile.dataset.effectId = fx.id;
-    tile.addEventListener("click", () => loadEffect(fx.id));
-    tile.addEventListener("dblclick", () => {
-      loadEffect(fx.id);
-      enterFullscreen();
-    });
-    presetGrid.appendChild(tile);
-  }
+  renderPresetGridUI(presetGrid, effects, {
+    onSelect: (id) => loadEffect(id),
+    onDoubleClick: (id) => { loadEffect(id); enterFullscreen(); },
+  });
 }
 
 function loadEffect(id) {
