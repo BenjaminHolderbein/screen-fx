@@ -27,6 +27,8 @@ uniform float u_bevelDepth;   // 0.02–0.2
 uniform float u_bevelWidth;   // in aspect-space units; fraction of min(res)
 uniform float u_chroma;       // 0–0.15
 uniform float u_chromaPower;  // non-linear distribution of chroma across the bevel
+uniform float u_bgScale;      // backdrop scale multiplier (0.3–3, 1 = default)
+uniform float u_bgSpeed;      // backdrop time multiplier (0–3, 1 = default)
 uniform vec2 u_lightDir;      // unit vector
 
 vec3 paletteAt(int i) {
@@ -86,9 +88,9 @@ float fbm(vec2 p) {
 }
 
 vec3 backdrop(vec2 uv) {
-  // Work in a stretched space for flowing streaks.
-  vec2 p = uv * vec2(3.2, 2.4);
-  float t = u_time;
+  // Work in a stretched space for flowing streaks. bgScale tunes density.
+  vec2 p = uv * vec2(3.2, 2.4) * u_bgScale;
+  float t = u_time * u_bgSpeed;
 
   vec2 q = vec2(
     fbm(p + vec2(0.0, 0.0) + t * 0.08),
@@ -271,6 +273,8 @@ export default {
     chroma: { type: "number", default: 0.06, min: 0, max: 0.15, step: 0.005, label: "Chromatic Dispersion" },
     chromaPower: { type: "number", default: 1.5, min: 0.5, max: 4, step: 0.1, label: "Chroma Power" },
     speed: { type: "number", default: 1.0, min: 0.1, max: 3, step: 0.05, label: "Speed" },
+    bgScale: { type: "number", default: 1.0, min: 0.3, max: 3, step: 0.05, label: "Backdrop Scale" },
+    bgSpeed: { type: "number", default: 1.0, min: 0, max: 3, step: 0.05, label: "Backdrop Speed" },
   },
   init(ctx, params, seed) {
     const { canvas } = ctx;
@@ -329,6 +333,8 @@ export default {
       bevelWidth: gl.getUniformLocation(prog, "u_bevelWidth"),
       chroma: gl.getUniformLocation(prog, "u_chroma"),
       chromaPower: gl.getUniformLocation(prog, "u_chromaPower"),
+      bgScale: gl.getUniformLocation(prog, "u_bgScale"),
+      bgSpeed: gl.getUniformLocation(prog, "u_bgSpeed"),
       lightDir: gl.getUniformLocation(prog, "u_lightDir"),
     };
 
@@ -431,6 +437,8 @@ export default {
         gl.uniform1f(u.bevelWidth, bevelWidth);
         gl.uniform1f(u.chroma, params.chroma ?? 0.06);
         gl.uniform1f(u.chromaPower, params.chromaPower ?? 1.5);
+        gl.uniform1f(u.bgScale, Math.max(0.3, Math.min(3, params.bgScale ?? 1.0)));
+        gl.uniform1f(u.bgSpeed, Math.max(0, Math.min(3, params.bgSpeed ?? 1.0)));
         gl.uniform2f(u.lightDir, lx, ly);
 
         gl.drawArrays(gl.TRIANGLES, 0, 3);
