@@ -2,8 +2,9 @@ import { build } from "esbuild";
 import { execSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 
-const DIST = "./dist";
-mkdirSync(DIST, { recursive: true });
+const BUILD_TMP = "./.build-tmp";
+const OUT_PATH = "./screen-fx.html";
+mkdirSync(BUILD_TMP, { recursive: true });
 
 // 1. Bundle JS
 console.log("[build] Bundling JS with esbuild...");
@@ -22,10 +23,10 @@ console.log(`[build] JS bundle: ${(js.length / 1024).toFixed(1)} KB`);
 // 2. Compile Tailwind CSS
 console.log("[build] Compiling Tailwind CSS...");
 execSync(
-  "npx tailwindcss -c ./tailwind.config.js -i ./tailwind.input.css -o ./dist/tailwind.css --minify",
+  `npx tailwindcss -c ./tailwind.config.js -i ./tailwind.input.css -o ${BUILD_TMP}/tailwind.css --minify`,
   { stdio: "inherit" },
 );
-const css = readFileSync("./dist/tailwind.css", "utf8");
+const css = readFileSync(`${BUILD_TMP}/tailwind.css`, "utf8");
 console.log(`[build] CSS: ${(css.length / 1024).toFixed(1)} KB`);
 
 // 3. Inline into HTML
@@ -58,7 +59,6 @@ html = html.replace(
   `    <script>${js}</script>\n  </body>`,
 );
 
-const outPath = `${DIST}/screen-fx.html`;
-writeFileSync(outPath, html);
-const { size } = statSync(outPath);
-console.log(`[build] Wrote ${outPath} (${(size / 1024).toFixed(1)} KB)`);
+writeFileSync(OUT_PATH, html);
+const { size } = statSync(OUT_PATH);
+console.log(`[build] Wrote ${OUT_PATH} (${(size / 1024).toFixed(1)} KB)`);

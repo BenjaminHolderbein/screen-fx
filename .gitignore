@@ -1,6 +1,7 @@
 node_modules
 .DS_Store
-dist/tailwind.css
+.build-tmp
+dist
 playwright-report
 test-results
 /.worktrees

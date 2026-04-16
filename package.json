@@ -1,8 +1,14 @@
 {
   "name": "screen-fx",
-  "version": "0.0.1",
-  "description": "The ultimate screen prettifier.",
+  "version": "0.1.0",
+  "description": "A single-page visual playground — generative effects with layerable post-FX, in one self-contained HTML file.",
   "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/BenjaminHolderbein/screen-fx",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BenjaminHolderbein/screen-fx.git"
+  },
   "private": true,
   "scripts": {
     "dev": "serve -l 5174 .",
