@@ -3,6 +3,7 @@ import { defaultParams } from "./fx/base.js";
 import { postFxOptions, getPostFx } from "./fx/postfx/registry.js";
 import { createColorPicker } from "./ui/color-picker.js";
 import { renderPresetGrid as renderPresetGridUI } from "./ui/preset-browser.js";
+import { createBacklight } from "./ui/backlight.js";
 
 const panelLabel = /** @type {HTMLElement} */ (document.getElementById("effect-label"));
 const paramsHost = /** @type {HTMLElement} */ (document.getElementById("params"));
@@ -260,6 +261,7 @@ function loadEffect(id) {
   const { w, h, dpr } = sizeCanvas();
   state.renderer = fx.init({ canvas: effectCanvas, width: w, height: h, dpr }, state.params, state.seed);
   writeHash();
+  backlight.capture(state.postFx ? postfxCanvas : effectCanvas);
 }
 
 function loadPostFx(id) {
@@ -278,6 +280,7 @@ function loadPostFx(id) {
     effectCanvas.classList.remove("hidden");
     if (postfxSelect.value !== id) postfxSelect.value = id;
     writeHash();
+    backlight.capture(effectCanvas);
     return;
   }
 
@@ -298,6 +301,7 @@ function loadPostFx(id) {
   postfxCanvas.classList.remove("hidden");
   if (postfxSelect.value !== id) postfxSelect.value = id;
   writeHash();
+  backlight.capture(postfxCanvas);
 }
 
 function renderPostFxSelect() {
@@ -397,6 +401,10 @@ ro.observe(previewWrap);
 parseHash();
 renderPresetGrid();
 renderPostFxSelect();
+const backlight = createBacklight(
+  /** @type {HTMLElement} */ (previewWrap.parentElement),
+  previewWrap,
+);
 loadEffect(state.effectId);
 loadPostFx(state.postFxId);
 state.raf = requestAnimationFrame(loop);
