@@ -9,7 +9,8 @@
       html, body, #app { height: 100%; margin: 0; }
       body { background: #0a0a0a; color: #e5e5e5; font-family: ui-sans-serif, system-ui, sans-serif; }
       .frost { background: rgba(20,20,20,0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
-      #preview-canvas { display: block; width: 100%; height: 100%; }
+      #effect-canvas, #postfx-canvas { display: block; width: 100%; height: 100%; position: absolute; inset: 0; }
+      #postfx-canvas.hidden, #effect-canvas.hidden { display: none; }
       #preview-wrap.fs { position: fixed; inset: 0; z-index: 50; border-radius: 0; }
       #preview-wrap.fs.cursor-hidden { cursor: none; }
       .preset-tile { aspect-ratio: 16/10; }
@@ -21,6 +22,15 @@
         <h1 class="text-sm font-semibold tracking-wide uppercase text-neutral-400 mb-3">screen-fx</h1>
         <div id="effect-label" class="text-lg font-medium mb-2">—</div>
         <div id="params" class="space-y-3"></div>
+
+        <div class="mt-5 pt-4 border-t border-white/10">
+          <div class="flex items-center justify-between gap-3 text-sm">
+            <span class="text-neutral-400 text-xs uppercase tracking-wide">Post-FX</span>
+            <select id="postfx-select" class="bg-black/40 border border-white/10 rounded px-2 py-1 text-sm w-40"></select>
+          </div>
+          <div id="postfx-params" class="mt-3 space-y-3"></div>
+        </div>
+
         <div class="mt-6 pt-4 border-t border-white/10 space-y-2 text-xs text-neutral-400">
           <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">F</kbd> fullscreen</div>
           <div><kbd class="px-1.5 py-0.5 rounded bg-white/10">Esc</kbd> exit</div>
@@ -33,7 +43,8 @@
 
       <main class="grid grid-rows-[60%_1fr] gap-3 min-h-0">
         <section id="preview-wrap" class="frost rounded-xl overflow-hidden relative">
-          <canvas id="preview-canvas"></canvas>
+          <canvas id="effect-canvas"></canvas>
+          <canvas id="postfx-canvas" class="hidden"></canvas>
         </section>
         <section class="frost rounded-xl p-3 overflow-y-auto min-h-0">
           <div class="text-xs uppercase tracking-wide text-neutral-400 mb-2">Presets</div>

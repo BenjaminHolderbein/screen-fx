@@ -1,19 +1,32 @@
 import { effects, getEffect } from "./fx/registry.js";
 import { defaultParams } from "./fx/base.js";
+import { postFxOptions, getPostFx } from "./fx/postfx/registry.js";
 import { createColorPicker } from "./ui/color-picker.js";
 
 const panelLabel = /** @type {HTMLElement} */ (document.getElementById("effect-label"));
 const paramsHost = /** @type {HTMLElement} */ (document.getElementById("params"));
+const postfxParamsHost = /** @type {HTMLElement} */ (document.getElementById("postfx-params"));
+const postfxSelect = /** @type {HTMLSelectElement} */ (document.getElementById("postfx-select"));
 const presetGrid = /** @type {HTMLElement} */ (document.getElementById("preset-grid"));
 const previewWrap = /** @type {HTMLElement} */ (document.getElementById("preview-wrap"));
 /** @type {HTMLCanvasElement} */
-let canvas = /** @type {HTMLCanvasElement} */ (document.getElementById("preview-canvas"));
+let effectCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById("effect-canvas"));
+const postfxCanvas = /** @type {HTMLCanvasElement} */ (document.getElementById("postfx-canvas"));
+const postfxGl = /** @type {WebGL2RenderingContext} */ (
+  postfxCanvas.getContext("webgl2", {
+    antialias: false,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: true,
+  })
+);
 
-function replaceCanvas() {
+function replaceEffectCanvas() {
   const fresh = document.createElement("canvas");
-  fresh.id = "preview-canvas";
-  canvas.replaceWith(fresh);
-  canvas = fresh;
+  fresh.id = "effect-canvas";
+  // Preserve the visibility class state so post-FX swap behavior survives.
+  if (effectCanvas.classList.contains("hidden")) fresh.classList.add("hidden");
+  effectCanvas.replaceWith(fresh);
+  effectCanvas = fresh;
 }
 
 const state = {
@@ -22,10 +35,17 @@ const state = {
   params: {},
   /** @type {Record<string, Record<string, any>>} */
   paramsByEffect: {},
+  postFxId: "none",
+  /** @type {Record<string, any>} */
+  postFxParams: {},
+  /** @type {Record<string, Record<string, any>>} */
+  postFxParamsById: {},
   seed: 1,
   paused: false,
   /** @type {import("./fx/base.js").FxRenderer | null} */
   renderer: null,
+  /** @type {import("./fx/postfx/base.js").PostFxRenderer | null} */
+  postFx: null,
   /** @type {number | null} */
   raf: null,
   lastT: 0,
@@ -41,6 +61,10 @@ function parseHash() {
     if (parsed.params && parsed.effectId) {
       state.paramsByEffect[parsed.effectId] = parsed.params;
     }
+    if (parsed.postFxId) state.postFxId = parsed.postFxId;
+    if (parsed.postFxParams && parsed.postFxId) {
+      state.postFxParamsById[parsed.postFxId] = parsed.postFxParams;
+    }
     if (typeof parsed.seed === "number") state.seed = parsed.seed;
   } catch {
     /* ignore */
@@ -48,7 +72,13 @@ function parseHash() {
 }
 
 function writeHash() {
-  const payload = { effectId: state.effectId, params: state.params, seed: state.seed };
+  const payload = {
+    effectId: state.effectId,
+    params: state.params,
+    postFxId: state.postFxId,
+    postFxParams: state.postFxParams,
+    seed: state.seed,
+  };
   const next = "#" + encodeURIComponent(JSON.stringify(payload));
   if (next !== window.location.hash) {
     history.replaceState(null, "", next);
@@ -60,15 +90,20 @@ function sizeCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.max(1, Math.floor(rect.width * dpr));
   const h = Math.max(1, Math.floor(rect.height * dpr));
-  if (canvas.width !== w || canvas.height !== h) {
-    canvas.width = w;
-    canvas.height = h;
+  if (effectCanvas.width !== w || effectCanvas.height !== h) {
+    effectCanvas.width = w;
+    effectCanvas.height = h;
     state.renderer?.resize(w, h);
+  }
+  if (postfxCanvas.width !== w || postfxCanvas.height !== h) {
+    postfxCanvas.width = w;
+    postfxCanvas.height = h;
+    state.postFx?.resize(w, h);
   }
   return { w, h, dpr };
 }
 
-function renderColorArrayParam(key, spec) {
+function renderColorArrayParam(host, values, key, spec) {
   const min = spec.min ?? 2;
   const max = spec.max ?? 8;
   const wrap = document.createElement("div");
@@ -90,7 +125,7 @@ function renderColorArrayParam(key, spec) {
 
   const redraw = () => {
     chips.innerHTML = "";
-    const arr = /** @type {string[]} */ (state.params[key]);
+    const arr = /** @type {string[]} */ (values[key]);
     arr.forEach((c, i) => {
       const row = document.createElement("div");
       row.className = "flex items-center gap-1";
@@ -121,19 +156,19 @@ function renderColorArrayParam(key, spec) {
       : "w-6 h-6 rounded bg-white/10 hover:bg-white/20 text-xs leading-none";
   };
   addBtn.addEventListener("click", () => {
-    const arr = /** @type {string[]} */ (state.params[key]);
+    const arr = /** @type {string[]} */ (values[key]);
     if (arr.length >= max) return;
     arr.push(arr[arr.length - 1] ?? "#ffffff");
     writeHash();
     redraw();
   });
   redraw();
-  paramsHost.appendChild(wrap);
+  host.appendChild(wrap);
 }
 
-function renderParamsUi(fx) {
-  paramsHost.innerHTML = "";
-  for (const [key, spec] of Object.entries(fx.params)) {
+function renderParamsInto(host, schema, values) {
+  host.innerHTML = "";
+  for (const [key, spec] of Object.entries(schema)) {
     const row = document.createElement("label");
     row.className = "flex items-center justify-between gap-3 text-sm";
     const name = document.createElement("span");
@@ -146,15 +181,15 @@ function renderParamsUi(fx) {
       colorRow.className = row.className;
       colorRow.appendChild(name);
       const picker = createColorPicker({
-        value: state.params[key],
-        onChange: (v) => { state.params[key] = v; writeHash(); },
+        value: values[key],
+        onChange: (v) => { values[key] = v; writeHash(); },
       });
       colorRow.appendChild(picker.element);
-      paramsHost.appendChild(colorRow);
+      host.appendChild(colorRow);
       continue;
     }
     if (spec.type === "colorArray") {
-      renderColorArrayParam(key, spec);
+      renderColorArrayParam(host, values, key, spec);
       continue;
     }
     /** @type {HTMLInputElement | HTMLSelectElement} */
@@ -162,7 +197,7 @@ function renderParamsUi(fx) {
     if (spec.type === "bool") {
       input = document.createElement("input");
       /** @type {HTMLInputElement} */ (input).type = "checkbox";
-      /** @type {HTMLInputElement} */ (input).checked = Boolean(state.params[key]);
+      /** @type {HTMLInputElement} */ (input).checked = Boolean(values[key]);
     } else if (spec.type === "enum") {
       input = document.createElement("select");
       for (const opt of spec.options ?? []) {
@@ -171,11 +206,11 @@ function renderParamsUi(fx) {
         o.textContent = opt;
         input.appendChild(o);
       }
-      /** @type {HTMLSelectElement} */ (input).value = String(state.params[key]);
+      /** @type {HTMLSelectElement} */ (input).value = String(values[key]);
     } else {
       input = document.createElement("input");
       /** @type {HTMLInputElement} */ (input).type = "number";
-      /** @type {HTMLInputElement} */ (input).value = String(state.params[key]);
+      /** @type {HTMLInputElement} */ (input).value = String(values[key]);
       if (spec.min !== undefined) /** @type {HTMLInputElement} */ (input).min = String(spec.min);
       if (spec.max !== undefined) /** @type {HTMLInputElement} */ (input).max = String(spec.max);
       if (spec.step !== undefined) /** @type {HTMLInputElement} */ (input).step = String(spec.step);
@@ -183,13 +218,13 @@ function renderParamsUi(fx) {
     input.className = "bg-black/40 border border-white/10 rounded px-2 py-1 text-sm w-40";
     input.addEventListener("input", () => {
       const el = /** @type {HTMLInputElement} */ (input);
-      if (spec.type === "bool") state.params[key] = el.checked;
-      else if (spec.type === "number") state.params[key] = Number(el.value);
-      else state.params[key] = el.value;
+      if (spec.type === "bool") values[key] = el.checked;
+      else if (spec.type === "number") values[key] = Number(el.value);
+      else values[key] = el.value;
       writeHash();
     });
     row.appendChild(input);
-    paramsHost.appendChild(row);
+    host.appendChild(row);
   }
 }
 
@@ -217,14 +252,64 @@ function loadEffect(id) {
     state.paramsByEffect[state.effectId] = state.params;
   }
   state.renderer?.dispose();
-  replaceCanvas();
+  replaceEffectCanvas();
   state.effectId = id;
   state.params = { ...defaultParams(fx.params), ...(state.paramsByEffect[id] ?? {}) };
   panelLabel.textContent = fx.label;
-  renderParamsUi(fx);
+  renderParamsInto(paramsHost, fx.params, state.params);
   const { w, h, dpr } = sizeCanvas();
-  state.renderer = fx.init({ canvas, width: w, height: h, dpr }, state.params, state.seed);
+  state.renderer = fx.init({ canvas: effectCanvas, width: w, height: h, dpr }, state.params, state.seed);
   writeHash();
+}
+
+function loadPostFx(id) {
+  // Persist current post-FX params before swapping.
+  if (state.postFxParams && state.postFxId && state.postFxId !== "none") {
+    state.postFxParamsById[state.postFxId] = state.postFxParams;
+  }
+  state.postFx?.dispose();
+  state.postFx = null;
+  state.postFxId = id;
+
+  if (id === "none") {
+    state.postFxParams = {};
+    postfxParamsHost.innerHTML = "";
+    postfxCanvas.classList.add("hidden");
+    effectCanvas.classList.remove("hidden");
+    if (postfxSelect.value !== id) postfxSelect.value = id;
+    writeHash();
+    return;
+  }
+
+  const mod = getPostFx(id);
+  if (!mod) {
+    state.postFxId = "none";
+    return;
+  }
+  state.postFxParams = { ...defaultParams(mod.params), ...(state.postFxParamsById[id] ?? {}) };
+  renderParamsInto(postfxParamsHost, mod.params, state.postFxParams);
+  const { w, h, dpr } = sizeCanvas();
+  state.postFx = mod.init(
+    { canvas: postfxCanvas, gl: postfxGl, width: w, height: h, dpr },
+    state.postFxParams,
+    state.seed,
+  );
+  effectCanvas.classList.add("hidden");
+  postfxCanvas.classList.remove("hidden");
+  if (postfxSelect.value !== id) postfxSelect.value = id;
+  writeHash();
+}
+
+function renderPostFxSelect() {
+  postfxSelect.innerHTML = "";
+  for (const opt of postFxOptions) {
+    const o = document.createElement("option");
+    o.value = opt.id;
+    o.textContent = opt.label;
+    postfxSelect.appendChild(o);
+  }
+  postfxSelect.value = state.postFxId;
+  postfxSelect.addEventListener("change", () => loadPostFx(postfxSelect.value));
 }
 
 function loop(tMs) {
@@ -237,6 +322,7 @@ function loop(tMs) {
   state.lastT = tMs;
   state.time += dt;
   state.renderer?.update(dt, state.time);
+  state.postFx?.apply(effectCanvas, dt, state.time);
 }
 
 function enterFullscreen() {
@@ -284,7 +370,8 @@ window.addEventListener("keydown", (e) => {
     state.seed = Math.floor(Math.random() * 1e9);
     loadEffect(state.effectId);
   } else if (e.key === "s" || e.key === "S") {
-    canvas.toBlob((b) => {
+    const target = state.postFx ? postfxCanvas : effectCanvas;
+    target.toBlob((b) => {
       if (!b) return;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(b);
@@ -309,7 +396,9 @@ ro.observe(previewWrap);
 // Boot
 parseHash();
 renderPresetGrid();
+renderPostFxSelect();
 loadEffect(state.effectId);
+loadPostFx(state.postFxId);
 state.raf = requestAnimationFrame(loop);
 
 // Test hooks
@@ -317,7 +406,10 @@ state.raf = requestAnimationFrame(loop);
 window.__screenFx = {
   state,
   effects,
+  postFxOptions,
   loadEffect,
+  loadPostFx,
   setSeed(s) { state.seed = s; loadEffect(state.effectId); },
   setParam(k, v) { state.params[k] = v; writeHash(); },
+  setPostFxParam(k, v) { state.postFxParams[k] = v; writeHash(); },
 };

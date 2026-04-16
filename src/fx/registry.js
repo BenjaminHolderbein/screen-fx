@@ -7,7 +7,6 @@ import flowField from "./particles/flow-field.js";
 import starfield from "./particles/starfield.js";
 import plasma from "./retro/plasma.js";
 import keyLight from "./functional/key-light.js";
-import liquidGlassSlab from "./generative/liquid-glass-slab.js";
 import causticSea from "./generative/caustic-sea.js";
 import oilSpill from "./generative/oil-spill.js";
 import { assertFxModule } from "./base.js";
@@ -26,7 +25,6 @@ export const effects = [
   starfield,
   plasma,
   keyLight,
-  liquidGlassSlab,
   causticSea,
   oilSpill,
 ].map(assertFxModule);

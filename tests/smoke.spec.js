@@ -40,7 +40,7 @@ test.describe("effects smoke", () => {
         expect(consoleErrors, `console errors while rendering ${id}`).toEqual([]);
 
         const nonBlank = await page.evaluate(() => {
-          const c = /** @type {HTMLCanvasElement} */ (document.getElementById("preview-canvas"));
+          const c = /** @type {HTMLCanvasElement} */ (document.getElementById("effect-canvas"));
           const ctx = c.getContext("2d") || c.getContext("webgl2") || c.getContext("webgl");
           // Reading pixels: if 2D, use getImageData. If WebGL, readPixels.
           const w = c.width, h = c.height;
@@ -70,6 +70,61 @@ test.describe("effects smoke", () => {
         });
 
         expect(nonBlank, `${id} produced a blank render`).toBe(true);
+      });
+    }
+  });
+
+  test("every post-fx renders over a sample effect", async ({ page }) => {
+    /** @type {string[]} */
+    const consoleErrors = [];
+    page.on("console", (msg) => {
+      if (msg.type() === "error") consoleErrors.push(msg.text());
+    });
+    page.on("pageerror", (err) => consoleErrors.push(String(err)));
+
+    await page.goto("/");
+    await page.waitForFunction(() => Boolean(/** @type {any} */ (window).__screenFx));
+
+    const postFxIds = await page.evaluate(() =>
+      /** @type {any} */ (window).__screenFx.postFxOptions
+        .filter((/** @type {any} */ p) => p.id !== "none")
+        .map((/** @type {any} */ p) => p.id),
+    );
+    if (postFxIds.length === 0) return;
+
+    // Pin oil-spill as source — high-contrast, edge-rich for refractive post-FX.
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__screenFx.setSeed(42);
+      /** @type {any} */ (window).__screenFx.loadEffect("oil-spill");
+    });
+
+    for (const id of postFxIds) {
+      await test.step(id, async () => {
+        consoleErrors.length = 0;
+        await page.evaluate((pid) => {
+          /** @type {any} */ (window).__screenFx.loadPostFx(pid);
+        }, id);
+        await page.waitForTimeout(2000);
+
+        expect(consoleErrors, `console errors while rendering postfx ${id}`).toEqual([]);
+
+        const nonBlank = await page.evaluate(() => {
+          const c = /** @type {HTMLCanvasElement} */ (document.getElementById("postfx-canvas"));
+          const gl = /** @type {WebGLRenderingContext} */ (c.getContext("webgl2") || c.getContext("webgl"));
+          const w = c.width, h = c.height;
+          const samples = 64;
+          const buf = new Uint8Array(4);
+          const set = new Set();
+          for (let i = 0; i < samples; i++) {
+            const x = Math.floor((i + 0.5) * w / samples);
+            const y = Math.floor((i + 0.5) * h / samples);
+            gl.readPixels(x, h - 1 - y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+            set.add(`${buf[0]},${buf[1]},${buf[2]}`);
+          }
+          return set.size > 1;
+        });
+
+        expect(nonBlank, `postfx ${id} produced a blank render`).toBe(true);
       });
     }
   });
