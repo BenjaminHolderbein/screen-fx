@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "serve -l 5174 .",
+    "build": "node build.js",
     "check": "tsc --noEmit -p jsconfig.json && eslint src tests",
     "test:fx": "playwright test",
     "test:fx:update": "playwright test --update-snapshots",
@@ -16,8 +17,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.47.0",
+    "esbuild": "^0.28.0",
     "eslint": "^9.10.0",
     "serve": "^14.2.3",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.6.0"
   }
 }
