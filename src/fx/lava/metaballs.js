@@ -79,8 +79,12 @@ function compile(gl, type, src) {
 const Y_MIN = -0.25;
 const Y_MAX = 1.25;
 const Y_SPAN = Y_MAX - Y_MIN;
-const FADE_IN_END = 0.2;   // fully opaque by y=0.2
-const FADE_OUT_START = 0.8; // start fading at y=0.8
+// Fade windows sit entirely off-screen so blobs cross the visible edge at
+// full weight -- the top of a blob can peek up from below at partial weight
+// as its center rises through [Y_MIN, 0], giving a natural "emerging from
+// below" read instead of a pop-in.
+const FADE_IN_END = 0.0;    // fully opaque once center reaches the bottom edge
+const FADE_OUT_START = 1.0; // fading begins only after center exits the top
 
 /** @type {import("../base.js").FxModule} */
 export default {
@@ -192,18 +196,20 @@ export default {
           // ends; between FADE_IN_END and FADE_OUT_START the blob is at full
           // weight. Using smoothstep on y (not prog01) so the fade happens
           // relative to the visible window regardless of phase.
+          // Fade ramps span the off-screen overshoot: weight grows across
+          // y in [Y_MIN, FADE_IN_END] and decays across [FADE_OUT_START, Y_MAX].
           let fadeIn;
-          if (y <= 0) fadeIn = 0;
+          if (y <= Y_MIN) fadeIn = 0;
           else if (y >= FADE_IN_END) fadeIn = 1;
           else {
-            const t = y / FADE_IN_END;
+            const t = (y - Y_MIN) / (FADE_IN_END - Y_MIN);
             fadeIn = t * t * (3 - 2 * t);
           }
           let fadeOut;
-          if (y >= 1) fadeOut = 0;
+          if (y >= Y_MAX) fadeOut = 0;
           else if (y <= FADE_OUT_START) fadeOut = 1;
           else {
-            const t = 1 - (y - FADE_OUT_START) / (1 - FADE_OUT_START);
+            const t = 1 - (y - FADE_OUT_START) / (Y_MAX - FADE_OUT_START);
             fadeOut = t * t * (3 - 2 * t);
           }
           const weight = fadeIn * fadeOut;
