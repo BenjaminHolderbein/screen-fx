@@ -128,8 +128,22 @@ export default {
     const bounce = {
       x: 0, y: 0, vx: 0, vy: 0, inited: false,
       seedUX: rng(), seedUY: rng(), seedVang: rng(),
+      // Scheduled corner-seeking state: every CORNER_INTERVAL ± jitter seconds,
+      // enter a "seeking" phase that aggressively steers toward a chosen corner
+      // until the slab arrives or SEEK_TIMEOUT elapses. This makes corner
+      // visits actually happen on a predictable cadence — pure wall-hit random
+      // nudges can't overcome stable billiard orbits.
+      nextCornerAt: 45 + rng() * 30, // first visit between 45s and 75s
+      seeking: false,
+      seekUntil: 0,
+      seekCornerX: 0,
+      seekCornerY: 0,
     };
     const BASE_SPEED = 0.12;
+    const CORNER_INTERVAL_MIN = 60;  // seconds between corner visits
+    const CORNER_INTERVAL_MAX = 110;
+    const SEEK_TIMEOUT = 18;         // abandon if we can't reach in this many seconds
+    const SEEK_ARRIVE_DIST = 0.02;   // considered "arrived" within this distance of corner
 
     const vs = compile(gl, gl.VERTEX_SHADER, VERT);
     const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
@@ -212,6 +226,19 @@ export default {
         }
 
         const step = Math.min(dt, 0.05);
+
+        // Enter corner-seeking mode on schedule. Pick the corner farthest from
+        // current position so the motion toward it reads as a clear traversal.
+        if (!bounce.seeking && time >= bounce.nextCornerAt) {
+          const midX = (minX + maxX) * 0.5;
+          const midY = (minY + maxY) * 0.5;
+          // Farthest corner → bigger visible arc; randomize when near center.
+          bounce.seekCornerX = bounce.x < midX ? maxX : minX;
+          bounce.seekCornerY = bounce.y < midY ? maxY : minY;
+          bounce.seeking = true;
+          bounce.seekUntil = time + SEEK_TIMEOUT;
+        }
+
         bounce.x += bounce.vx * speedMul * step;
         bounce.y += bounce.vy * speedMul * step;
 
@@ -221,9 +248,47 @@ export default {
         if (bounce.y < minY) { bounce.y = minY; bounce.vy = Math.abs(bounce.vy); hitY = true; }
         else if (bounce.y > maxY) { bounce.y = maxY; bounce.vy = -Math.abs(bounce.vy); hitY = true; }
 
-        if ((hitX || hitY) && rng() < 0.12) {
-          const nearCornerX = bounce.x < (minX + maxX) * 0.5 ? minX : maxX;
-          const nearCornerY = bounce.y < (minY + maxY) * 0.5 ? minY : maxY;
+        if (bounce.seeking) {
+          // Steer velocity decisively toward the target corner. We apply a
+          // continuous (frame-rate-independent) rotation toward the corner
+          // direction, preserving the current speed so motion stays smooth.
+          const tx = bounce.seekCornerX - bounce.x;
+          const ty = bounce.seekCornerY - bounce.y;
+          const tlen = Math.hypot(tx, ty) + 1e-6;
+          const cur = Math.hypot(bounce.vx, bounce.vy) || BASE_SPEED;
+          // Blend rate per second; at step=1/60 this gives ~0.025 per frame,
+          // enough to visibly curve toward the corner but still organic.
+          const blendRate = 1.5;
+          const k = Math.min(1, blendRate * step);
+          const nvx = bounce.vx * (1 - k) + (tx / tlen) * cur * k;
+          const nvy = bounce.vy * (1 - k) + (ty / tlen) * cur * k;
+          const nn = Math.hypot(nvx, nvy) || 1;
+          bounce.vx = (nvx / nn) * cur;
+          bounce.vy = (nvy / nn) * cur;
+
+          // Exit seeking when we arrive at the corner, or on timeout. Also
+          // exit if we bounced off the target corner's walls (we're there).
+          const arrived = tlen < SEEK_ARRIVE_DIST;
+          const hitTargetWallX = hitX &&
+            ((bounce.seekCornerX === minX && bounce.x <= minX + 1e-6) ||
+             (bounce.seekCornerX === maxX && bounce.x >= maxX - 1e-6));
+          const hitTargetWallY = hitY &&
+            ((bounce.seekCornerY === minY && bounce.y <= minY + 1e-6) ||
+             (bounce.seekCornerY === maxY && bounce.y >= maxY - 1e-6));
+          if (arrived || (hitTargetWallX && hitTargetWallY) || time >= bounce.seekUntil) {
+            bounce.seeking = false;
+            bounce.nextCornerAt = time +
+              CORNER_INTERVAL_MIN + rng() * (CORNER_INTERVAL_MAX - CORNER_INTERVAL_MIN);
+          }
+        } else if ((hitX || hitY) && rng() < 0.12) {
+          // Subtle organic nudge between scheduled visits: on wall hits, bias
+          // slightly toward a random adjacent corner to break stable orbits.
+          const nearCornerX = hitX
+            ? (bounce.x <= minX + 1e-6 ? maxX : minX) // if hit left wall, bias toward right
+            : (bounce.x < (minX + maxX) * 0.5 ? minX : maxX);
+          const nearCornerY = hitY
+            ? (bounce.y <= minY + 1e-6 ? maxY : minY)
+            : (bounce.y < (minY + maxY) * 0.5 ? minY : maxY);
           const tx = nearCornerX - bounce.x;
           const ty = nearCornerY - bounce.y;
           const tlen = Math.hypot(tx, ty) + 1e-6;
